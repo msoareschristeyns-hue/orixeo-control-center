@@ -1,0 +1,22 @@
+import React,{useEffect,useState} from 'react';
+import{createRoot}from'react-dom/client';
+import{createClient,Session}from'@supabase/supabase-js';
+import'./style.css';
+
+const url=import.meta.env.VITE_SUPABASE_URL;
+const key=import.meta.env.VITE_SUPABASE_ANON_KEY;
+const supabase=createClient(url,key);
+
+type Opp={id:string;title:string;stage:string;opportunity_score:number|null;confidence_score:number|null;data_quality_score:number|null;company_id:string};
+
+function App(){
+ const[session,setSession]=useState<Session|null>(null),[email,setEmail]=useState(''),[password,setPassword]=useState(''),[error,setError]=useState(''),[tenant,setTenant]=useState<any>(null),[opps,setOpps]=useState<Opp[]>([]),[busy,setBusy]=useState(false);
+ useEffect(()=>{supabase.auth.getSession().then(({data})=>setSession(data.session));const{data:{subscription}}=supabase.auth.onAuthStateChange((_e,s)=>setSession(s));return()=>subscription.unsubscribe()},[]);
+ useEffect(()=>{if(session)load();else{setTenant(null);setOpps([])}},[session]);
+ async function login(e:React.FormEvent){e.preventDefault();setBusy(true);setError('');const{error}=await supabase.auth.signInWithPassword({email,password});if(error)setError(error.message);setBusy(false)}
+ async function load(){setError('');const{data:m,error:me}=await supabase.from('tenant_members').select('tenant_id,role,tenants(id,name,slug)').limit(1).single();if(me){setError(me.message);return}setTenant(m);const{data,error}=await supabase.from('opportunities').select('id,title,stage,opportunity_score,confidence_score,data_quality_score,company_id').order('created_at',{ascending:false});if(error)setError(error.message);else setOpps(data||[])}
+ async function guard(id:string){const o=opps.find(x=>x.id===id);if(!o||!tenant)return;const{data:contact,error:e1}=await supabase.from('opportunities').select('contact_id').eq('id',id).single();if(e1||!contact?.contact_id){alert('BLOCK : contact manquant');return}const{data,error}=await supabase.rpc('guard_outreach',{p_tenant:tenant.tenant_id,p_contact:contact.contact_id,p_agent:'sales',p_action:'external.send'});alert(error?`Erreur Guard : ${error.message}`:`Orixeo Guard : ${String(data).toUpperCase()}`)}
+ if(!session)return <main className="login"><section><div className="brand">ORIXEO <b>LAB</b></div><h1>Control Center</h1><p>Votre équipe IA opérationnelle.</p><form onSubmit={login}><input type="email" placeholder="Email" value={email} onChange={e=>setEmail(e.target.value)} required/><input type="password" placeholder="Mot de passe" value={password} onChange={e=>setPassword(e.target.value)} required/><button disabled={busy}>{busy?'Connexion…':'Se connecter'}</button></form>{error&&<div className="err">{error}</div>}</section></main>;
+ return <div><header><div className="brand">ORIXEO <b>LAB</b></div><div>{tenant?.tenants?.name||'Chargement…'} · {tenant?.role}<button className="link" onClick={()=>supabase.auth.signOut()}>Déconnexion</button></div></header><main className="wrap"><div className="hero"><div><span className="tag">CONTROL CENTER · V0.1</span><h1>Pilotage des opportunités</h1><p>Scoring, contrôle Guard et validation humaine avant toute action externe.</p></div><button onClick={load}>Actualiser</button></div>{error&&<div className="err">{error}</div>}<div className="cards"><article><strong>{opps.length}</strong><span>Opportunités</span></article><article><strong>{opps.filter(o=>o.stage==='scored').length}</strong><span>Scorées</span></article><article><strong>{opps.filter(o=>(o.opportunity_score||0)>=70).length}</strong><span>Prioritaires ≥70</span></article></div><section className="panel"><h2>Opportunity Engine</h2><div className="table"><div className="row head"><span>Opportunité</span><span>Étape</span><span>Score</span><span>Confiance</span><span>Qualité</span><span>Guard</span></div>{opps.map(o=><div className="row" key={o.id}><span>{o.title}</span><span className="pill">{o.stage}</span><span>{o.opportunity_score??'—'}</span><span>{o.confidence_score??'—'}</span><span>{o.data_quality_score??'—'}</span><span><button className="small" onClick={()=>guard(o.id)}>Tester</button></span></div>)}</div></section></main></div>
+}
+createRoot(document.getElementById('root')!).render(<App/>);
