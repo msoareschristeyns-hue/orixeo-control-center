@@ -1,0 +1,8 @@
+{
+  "name": "orixeo-enrichment-worker",
+  "version": "1.9.0",
+  "private": true,
+  "type": "module",
+  "scripts": { "start": "node index.js" },
+  "dependencies": { "@supabase/supabase-js": "^2.57.0" }
+}
