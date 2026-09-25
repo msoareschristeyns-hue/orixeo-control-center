@@ -1,0 +1,4 @@
+-- Orixeo Agent Factory schema source-of-truth placeholder.
+-- Local MCP restrictions prevent FK to auth.users and direct extensions.vector references.
+-- Runtime tables use UUID user identifiers without auth FK for now.
+-- RLS must remain enabled on all runtime tables before exposing the orixeo schema through PostgREST.
