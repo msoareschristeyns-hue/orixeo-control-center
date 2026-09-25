@@ -1,0 +1,4 @@
+import express from "express";
+import { env } from "./config.js";
+import { runAgent } from "./agent.js";
+const app=express();app.use(express.json({limit:"1mb"}));app.get("/health",(_req,res)=>res.json({ok:true,service:"orixeo-agent-factory"}));app.post("/api/agents/:agentId/chat",async(req,res)=>{try{const organizationId=String(req.header("x-organization-id")||"");if(!organizationId)return res.status(400).json({error:"x-organization-id required"});const message=String(req.body?.message||"");if(!message)return res.status(400).json({error:"message required"});res.json(await runAgent({organizationId,agentId:req.params.agentId,message,conversationId:req.body?.conversationId}));}catch(e:any){res.status(500).json({error:e?.message||"agent_error"});}});app.listen(env.PORT,()=>console.log("Orixeo Agent Factory listening on "+env.PORT));
