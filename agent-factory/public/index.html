@@ -1,0 +1,20 @@
+<!doctype html>
+<html lang="fr"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Orixeo Agent Factory</title><link rel="stylesheet" href="/styles.css"></head>
+<body>
+<aside><div class="brand"><span>O</span><div><strong>ORIXEO</strong><small>Agent Factory</small></div></div>
+<nav><button class="nav active" data-view="agents">Agents</button><button class="nav" data-view="create">Créer un agent</button><button class="nav" data-view="knowledge">Connaissances</button><button class="nav" data-view="test">Tester</button></nav>
+<div class="status"><i></i> MVP connecté</div></aside>
+<main>
+<header><div><p class="eyebrow">ORIXEO LAB</p><h1 id="title">Mes agents</h1><p id="subtitle">Créez, configurez et testez vos collaborateurs IA.</p></div><button class="primary" onclick="showView('create')">+ Nouvel agent</button></header>
+<section id="setup" class="setup card"><h2>Connexion au MVP</h2><p>Renseignez les deux valeurs serveur pour administrer votre environnement de test.</p><div class="grid2"><label>Organization ID<input id="orgId" value="4b51d3a5-b888-4826-ab15-32a1f3b95e05"></label><label>Clé API<input id="apiKey" type="password" placeholder="AGENT_FACTORY_API_KEY"></label></div><button class="primary" onclick="connect()">Se connecter</button><span id="connectMsg"></span></section>
+<section id="agents" class="view"><div id="agentGrid" class="cards"></div></section>
+<section id="create" class="view hidden"><div class="card form"><h2>Créer un agent</h2><div class="channel-picker"><button class="channel selected" data-channel="chat">💬<b>Chatbot</b><small>Site, portail, support</small></button><button class="channel" data-channel="voice">☎<b>Agent vocal</b><small>Téléphone, accueil</small></button><button class="channel" data-channel="multichannel">✦<b>Multicanal</b><small>Chat + voix + email</small></button></div>
+<div class="grid2"><label>Nom de l'agent<input id="agentName" placeholder="Ex. Assistant Accueil"></label><label>Identifiant<input id="agentSlug" placeholder="assistant-accueil"></label></div>
+<label>Mission<textarea id="agentDescription" placeholder="Que doit accomplir cet agent ?"></textarea></label>
+<label>Instructions de l'agent<textarea id="agentPrompt" rows="7" placeholder="Tu es l'assistant IA de..."></textarea></label>
+<div class="checks"><label><input type="checkbox" id="knowledgeSearch" checked> Base de connaissances</label><label><input type="checkbox" id="leadQualification" checked> Qualification prospect</label><label><input type="checkbox" id="appointmentReady"> Rendez-vous</label><label><input type="checkbox" id="humanEscalation" checked> Escalade humaine</label></div>
+<button class="primary" onclick="createAgent()">Créer l'agent</button><span id="createMsg"></span></div></section>
+<section id="knowledge" class="view hidden"><div class="card form"><h2>Ajouter une connaissance</h2><label>Agent<select id="knowledgeAgent"></select></label><label>Titre<input id="docTitle" placeholder="FAQ commerciale"></label><label>Contenu<textarea id="docContent" rows="10" placeholder="Collez ici une procédure, une FAQ, des tarifs..."></textarea></label><button class="primary" onclick="addDocument()">Ajouter à la connaissance</button><span id="docMsg"></span></div></section>
+<section id="test" class="view hidden"><div class="chat-layout"><div class="card agent-select"><h2>Agent à tester</h2><select id="testAgent"></select><p>Testez le comportement avant mise en production.</p></div><div class="card chat"><div id="messages" class="messages"><div class="bubble bot">Bonjour. Sélectionnez un agent puis posez-moi une question.</div></div><div class="composer"><input id="chatInput" placeholder="Écrivez votre message..." onkeydown="if(event.key==='Enter')sendMessage()"><button class="primary" onclick="sendMessage()">Envoyer</button></div></div></div></section>
+</main><script src="/app.js"></script></body></html>
