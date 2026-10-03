@@ -78,6 +78,7 @@ function renderShell(data:PortalData){
         <div class="op-org"><b>${esc(org.name)}</b><span>${esc(org.role)}</span></div>
         <nav>
           <a class="active">Vue d'ensemble</a>
+          <a id="op-followups-link">Relances</a>
           <a id="op-crm-link">CRM</a>
           <a id="op-leads-link">Leads</a>
           <a id="op-convs-link">Conversations</a>
@@ -94,6 +95,11 @@ function renderShell(data:PortalData){
           <article><span>Appels IA ce mois</span><b>${esc(stats.ai_calls_month??0)}</b></article>
           <article><span>Coût IA</span><b>$${money(fin.ai_cost_usd,3)}</b></article>
           <article><span>Budget consommé</span><b>${fin.budget_consumption_pct==null?'—':money(fin.budget_consumption_pct,1)+' %'}</b></article>
+        </section>
+        <section class="op-card" id="op-followups">
+          <div class="op-title"><h2>Relances prioritaires</h2><span>Détection intelligente</span></div>
+          <div class="op-followup-toolbar"><button id="op-refresh-followups">Actualiser la détection</button></div>
+          <div id="op-followup-list"><p class="op-empty">Chargement des relances…</p></div>
         </section>
         <section class="op-card" id="op-crm">
           <div class="op-title"><h2>Pipeline commercial</h2><span>Sales AI CRM</span></div>
@@ -135,15 +141,69 @@ function renderShell(data:PortalData){
     </div>`;
 
   root.querySelector('#op-logout')?.addEventListener('click',()=>supabase.auth.signOut());
+  root.querySelector('#op-followups-link')?.addEventListener('click',()=>document.querySelector('#op-followups')?.scrollIntoView({behavior:'smooth'}));
   root.querySelector('#op-crm-link')?.addEventListener('click',()=>document.querySelector('#op-crm')?.scrollIntoView({behavior:'smooth'}));
   root.querySelector('#op-leads-link')?.addEventListener('click',()=>document.querySelector('#op-leads')?.scrollIntoView({behavior:'smooth'}));
   root.querySelector('#op-convs-link')?.addEventListener('click',()=>document.querySelector('#op-convs')?.scrollIntoView({behavior:'smooth'}));
   root.querySelector('#op-usage-link')?.addEventListener('click',()=>document.querySelector('#op-usage')?.scrollIntoView({behavior:'smooth'}));
   root.querySelectorAll('.op-conv').forEach(btn=>btn.addEventListener('click',()=>void openConversation((btn as HTMLElement).dataset.id!)));
+  void loadFollowups();
   void loadCrmBoard();
   root.querySelector('#op-modal-close')?.addEventListener('click',()=>root.querySelector('#op-modal')?.classList.remove('open'));
+  root.querySelector('#op-refresh-followups')?.addEventListener('click',()=>void refreshFollowups());
 }
 
+
+
+async function loadFollowups(){
+  if(!selectedOrg) return;
+  const list=root.querySelector('#op-followup-list') as HTMLElement|null;
+  if(!list) return;
+  try{
+    const data=await api('/portal/crm/followups?organization_id='+encodeURIComponent(selectedOrg));
+    const items=data.items||[];
+    list.innerHTML=items.length?'<div class="op-followups">'+items.map((x:any)=>`
+      <article class="op-followup-card">
+        <div class="op-followup-score"><b>${esc(x.priority_score)}</b><span>/100</span></div>
+        <div class="op-followup-main">
+          <b>${esc([x.first_name,x.last_name].filter(Boolean).join(' ')||x.email||'Sans nom')}</b>
+          <span>${esc(x.company||'—')} · ${esc(x.stage||'new')}</span>
+          <p>${esc(x.suggested_action)}</p>
+          <small>${esc(x.reason)}${x.due_at?' · '+new Date(x.due_at).toLocaleString('fr-FR'):''}</small>
+        </div>
+        <div class="op-followup-actions">
+          <button class="op-followup-open" data-lead="${esc(x.lead_id)}">Ouvrir</button>
+          <button class="op-followup-done" data-id="${esc(x.id)}">Traité</button>
+          <button class="op-followup-snooze" data-id="${esc(x.id)}">+3 jours</button>
+          <button class="op-followup-dismiss" data-id="${esc(x.id)}">Ignorer</button>
+        </div>
+      </article>`).join('')+'</div>':'<p class="op-empty">Aucune relance prioritaire actuellement.</p>';
+    list.querySelectorAll('.op-followup-open').forEach(btn=>btn.addEventListener('click',()=>void openLead((btn as HTMLElement).dataset.lead!)));
+    list.querySelectorAll('.op-followup-done').forEach(btn=>btn.addEventListener('click',()=>void followupAction((btn as HTMLElement).dataset.id!,'done')));
+    list.querySelectorAll('.op-followup-snooze').forEach(btn=>btn.addEventListener('click',()=>void followupAction((btn as HTMLElement).dataset.id!,'snooze')));
+    list.querySelectorAll('.op-followup-dismiss').forEach(btn=>btn.addEventListener('click',()=>void followupAction((btn as HTMLElement).dataset.id!,'dismiss')));
+  }catch(e:any){
+    list.innerHTML='<p class="op-error">'+esc(e?.message||e)+'</p>';
+  }
+}
+
+async function followupAction(id:string,action:string){
+  if(!selectedOrg) return;
+  await api('/portal/crm/followups/action?organization_id='+encodeURIComponent(selectedOrg),{
+    method:'POST',
+    body:JSON.stringify({id,action})
+  });
+  await loadFollowups();
+}
+
+async function refreshFollowups(){
+  if(!selectedOrg) return;
+  await api('/portal/crm/followups/refresh?organization_id='+encodeURIComponent(selectedOrg),{
+    method:'POST',
+    body:'{}'
+  });
+  await loadFollowups();
+}
 
 async function loadCrmBoard(){
   if(!selectedOrg) return;
