@@ -82,6 +82,7 @@ function renderShell(data:PortalData){
           <a id="op-crm-link">CRM</a>
           <a id="op-leads-link">Leads</a>
           <a id="op-convs-link">Conversations</a>
+          <a id="op-notifications-link">Notifications</a>
           <a id="op-workflow-link">Workflow Center</a>
           <a id="op-knowledge-link">Knowledge Center</a>
           <a id="op-governance-link">Gouvernance IA</a>
@@ -105,6 +106,10 @@ function renderShell(data:PortalData){
           <article><span>Appels IA ce mois</span><b>${esc(stats.ai_calls_month??0)}</b></article>
           <article><span>Coût IA</span><b>$${money(fin.ai_cost_usd,3)}</b></article>
           <article><span>Budget consommé</span><b>${fin.budget_consumption_pct==null?'—':money(fin.budget_consumption_pct,1)+' %'}</b></article>
+        </section>
+        <section class="op-card" id="op-notifications">
+          <div class="op-title"><h2>Notification Center</h2><span>Alertes & acquittements</span></div>
+          <div id="op-notifications-content"><p class="op-empty">Chargement des notifications…</p></div>
         </section>
         <section class="op-card" id="op-workflow">
           <div class="op-title"><h2>Workflow & Automation Center</h2><span>Règles, actions & historique</span></div>
@@ -180,6 +185,7 @@ function renderShell(data:PortalData){
   root.querySelector('#op-crm-link')?.addEventListener('click',()=>document.querySelector('#op-crm')?.scrollIntoView({behavior:'smooth'}));
   root.querySelector('#op-leads-link')?.addEventListener('click',()=>document.querySelector('#op-leads')?.scrollIntoView({behavior:'smooth'}));
   root.querySelector('#op-convs-link')?.addEventListener('click',()=>document.querySelector('#op-convs')?.scrollIntoView({behavior:'smooth'}));
+  root.querySelector('#op-notifications-link')?.addEventListener('click',()=>document.querySelector('#op-notifications')?.scrollIntoView({behavior:'smooth'}));
   root.querySelector('#op-workflow-link')?.addEventListener('click',()=>document.querySelector('#op-workflow')?.scrollIntoView({behavior:'smooth'}));
   root.querySelector('#op-knowledge-link')?.addEventListener('click',()=>document.querySelector('#op-knowledge')?.scrollIntoView({behavior:'smooth'}));
   root.querySelector('#op-governance-link')?.addEventListener('click',()=>document.querySelector('#op-governance')?.scrollIntoView({behavior:'smooth'}));
@@ -189,6 +195,7 @@ function renderShell(data:PortalData){
   root.querySelector('#op-usage-link')?.addEventListener('click',()=>document.querySelector('#op-usage')?.scrollIntoView({behavior:'smooth'}));
   root.querySelectorAll('.op-conv').forEach(btn=>btn.addEventListener('click',()=>void openConversation((btn as HTMLElement).dataset.id!)));
   void loadToday();
+  void loadNotifications();
   void loadWorkflow();
   void loadKnowledge();
   void loadGovernance();
@@ -209,6 +216,77 @@ function renderShell(data:PortalData){
 
 
 
+
+
+async function loadNotifications(){
+  if(!selectedOrg) return;
+  const box=root.querySelector('#op-notifications-content') as HTMLElement|null;
+  if(!box) return;
+  try{
+    const data=await api('/portal/notifications?organization_id='+encodeURIComponent(selectedOrg));
+    const s=data.summary||{}, notifications=data.notifications||[];
+
+    box.innerHTML=`
+      <div class="op-notif-kpis">
+        <div><span>Total</span><b>${esc(s.total??0)}</b></div>
+        <div><span>Non lues</span><b>${esc(s.unread??0)}</b></div>
+        <div><span>Critiques</span><b>${esc(s.critical??0)}</b></div>
+      </div>
+      <div class="op-notif-toolbar">
+        <select id="op-notif-category">
+          <option value="">Toutes les catégories</option>
+          <option value="commercial">Commercial</option>
+          <option value="security">Sécurité</option>
+          <option value="budget">Budget</option>
+          <option value="governance">Gouvernance</option>
+          <option value="workflow">Workflow</option>
+          <option value="operations">Supervision</option>
+          <option value="system">Système</option>
+        </select>
+        <select id="op-notif-priority">
+          <option value="">Toutes les priorités</option>
+          <option value="critical">Critique</option>
+          <option value="high">Haute</option>
+          <option value="normal">Normale</option>
+          <option value="low">Basse</option>
+        </select>
+      </div>
+      <div id="op-notif-list" class="op-notif-list"></div>`;
+
+    const list=box.querySelector('#op-notif-list') as HTMLElement;
+    const renderList=()=>{
+      const category=(box.querySelector('#op-notif-category') as HTMLSelectElement).value;
+      const priority=(box.querySelector('#op-notif-priority') as HTMLSelectElement).value;
+      const filtered=notifications.filter((n:any)=>(!category||n.category===category)&&(!priority||n.priority===priority));
+      list.innerHTML=filtered.map((n:any)=>`
+        <article class="op-notif-item op-priority-${esc(n.priority)} ${n.status!=='unread'?'is-read':''}">
+          <div class="op-notif-main">
+            <div><b>${esc(n.title)}</b><span>${esc(n.category)} · ${esc(n.priority)} · ${esc(n.status)}</span></div>
+            <p>${esc(n.message||'')}</p>
+            <small>${new Date(n.created_at).toLocaleString('fr-FR')}${n.source_type?' · '+esc(n.source_type):''}</small>
+          </div>
+          <div class="op-notif-actions">
+            ${n.status==='unread'?'<button data-action="read" data-id="'+esc(n.id)+'">Lu</button>':''}
+            ${n.status!=='acknowledged'?'<button data-action="acknowledge" data-id="'+esc(n.id)+'">Acquitter</button>':''}
+            ${n.status!=='dismissed'?'<button data-action="dismiss" data-id="'+esc(n.id)+'">Ignorer</button>':''}
+          </div>
+        </article>`).join('')||'<p class="op-empty">Aucune notification.</p>';
+
+      list.querySelectorAll('.op-notif-actions button').forEach(btn=>btn.addEventListener('click',async()=>{
+        await api('/portal/notifications/action?organization_id='+encodeURIComponent(selectedOrg!),{
+          method:'POST',
+          body:JSON.stringify({id:(btn as HTMLElement).dataset.id,action:(btn as HTMLElement).dataset.action})
+        });
+        await loadNotifications();
+      }));
+    };
+    renderList();
+    box.querySelector('#op-notif-category')?.addEventListener('change',renderList);
+    box.querySelector('#op-notif-priority')?.addEventListener('change',renderList);
+  }catch(e:any){
+    box.innerHTML='<p class="op-error">'+esc(e?.message||e)+'</p>';
+  }
+}
 
 async function loadWorkflow(){
   if(!selectedOrg) return;
