@@ -1,0 +1,18 @@
+name: Orixeo Control Center Release Gate
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: sh scripts/prepare-lockfile.sh
+      - run: sh scripts/release-gate.sh
