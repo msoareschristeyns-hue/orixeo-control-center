@@ -1,5 +1,6 @@
 import { createClient } from '@supabase/supabase-js';
 import './finance-unit-economics.css';
+import './product-adoption';
 
 const supabase=createClient(import.meta.env.VITE_SUPABASE_URL,import.meta.env.VITE_SUPABASE_ANON_KEY);
 const apiBase=(import.meta.env.VITE_ORIXEO_API_URL||'https://supabase-mcp.msdg-innovation.fr/api/orixeo/v1').replace(/\/$/,'');
