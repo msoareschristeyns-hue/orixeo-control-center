@@ -38,9 +38,30 @@ async function loadClients(root:HTMLElement){
         <div><span>Coût IA</span><strong>$${money(c.ai_cost_usd,4)}</strong></div>
         <div><span>Mode</span><strong>${esc(c.enforcement_mode||'—')}</strong></div>
         <div><span>Widget</span><code>${esc(c.widget_key||'non créé')}</code></div>
+        <div><button class="oc-invite-btn" data-org="${esc(c.id)}" data-name="${esc(c.name)}">Inviter au portail</button></div>
       </article>`).join('')||'<p class="oc-muted">Aucun client pour le moment.</p>';
+    list.querySelectorAll('.oc-invite-btn').forEach(btn=>btn.addEventListener('click',()=>void invitePortal(root,(btn as HTMLElement).dataset.org!,(btn as HTMLElement).dataset.name!)));
   }catch(e:any){
     list.innerHTML='<p class="oc-error">'+esc(e?.message||e)+'</p>';
+  }
+}
+
+async function invitePortal(root:HTMLElement,organizationId:string,name:string){
+  const email=window.prompt('Email du client à inviter pour '+name);
+  if(!email) return;
+  const role=window.prompt('Rôle : owner, admin, builder, operator ou viewer','owner')||'owner';
+  try{
+    const data=await api('/portal/invite',{method:'POST',body:JSON.stringify({
+      organization_id:organizationId,
+      email,
+      role
+    })});
+    const portalUrl=(location.origin+'/portal.html?invite='+encodeURIComponent(data.invite_token));
+    const out=root.querySelector('#oc-client-result') as HTMLElement;
+    out.innerHTML=`<div class="oc-success"><b>Invitation créée</b><p>${esc(email)}</p><label>Lien portail</label><code>${esc(portalUrl)}</code><small>Valable jusqu'au ${new Date(data.expires_at).toLocaleString('fr-FR')}</small></div>`;
+  }catch(e:any){
+    const out=root.querySelector('#oc-client-result') as HTMLElement;
+    out.innerHTML='<p class="oc-error">'+esc(e?.message||e)+'</p>';
   }
 }
 
