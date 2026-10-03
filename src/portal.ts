@@ -82,6 +82,7 @@ function renderShell(data:PortalData){
           <a id="op-crm-link">CRM</a>
           <a id="op-leads-link">Leads</a>
           <a id="op-convs-link">Conversations</a>
+          <a id="op-reporting-link">Reporting</a>
           <a id="op-usage-link">Usage IA</a>
         </nav>
         <button id="op-logout">Déconnexion</button>
@@ -99,6 +100,10 @@ function renderShell(data:PortalData){
           <article><span>Appels IA ce mois</span><b>${esc(stats.ai_calls_month??0)}</b></article>
           <article><span>Coût IA</span><b>$${money(fin.ai_cost_usd,3)}</b></article>
           <article><span>Budget consommé</span><b>${fin.budget_consumption_pct==null?'—':money(fin.budget_consumption_pct,1)+' %'}</b></article>
+        </section>
+        <section class="op-card" id="op-reporting">
+          <div class="op-title"><h2>Reporting commercial</h2><span>Conversion & performance</span></div>
+          <div id="op-reporting-content"><p class="op-empty">Chargement du reporting…</p></div>
         </section>
         <section class="op-card" id="op-followups">
           <div class="op-title"><h2>Relances prioritaires</h2><span>Détection intelligente</span></div>
@@ -150,9 +155,11 @@ function renderShell(data:PortalData){
   root.querySelector('#op-crm-link')?.addEventListener('click',()=>document.querySelector('#op-crm')?.scrollIntoView({behavior:'smooth'}));
   root.querySelector('#op-leads-link')?.addEventListener('click',()=>document.querySelector('#op-leads')?.scrollIntoView({behavior:'smooth'}));
   root.querySelector('#op-convs-link')?.addEventListener('click',()=>document.querySelector('#op-convs')?.scrollIntoView({behavior:'smooth'}));
+  root.querySelector('#op-reporting-link')?.addEventListener('click',()=>document.querySelector('#op-reporting')?.scrollIntoView({behavior:'smooth'}));
   root.querySelector('#op-usage-link')?.addEventListener('click',()=>document.querySelector('#op-usage')?.scrollIntoView({behavior:'smooth'}));
   root.querySelectorAll('.op-conv').forEach(btn=>btn.addEventListener('click',()=>void openConversation((btn as HTMLElement).dataset.id!)));
   void loadToday();
+  void loadReporting();
   void loadFollowups();
   void loadCrmBoard();
   root.querySelector('#op-modal-close')?.addEventListener('click',()=>root.querySelector('#op-modal')?.classList.remove('open'));
@@ -161,6 +168,70 @@ function renderShell(data:PortalData){
 
 
 
+
+
+async function loadReporting(){
+  if(!selectedOrg) return;
+  const box=root.querySelector('#op-reporting-content') as HTMLElement|null;
+  if(!box) return;
+  try{
+    const data=await api('/portal/reporting?organization_id='+encodeURIComponent(selectedOrg));
+    const h=data.headline||{},v=data.velocity||{},funnel=data.funnel||[],pipeline=data.pipeline||[],ai=data.ai_performance||[];
+    box.innerHTML=`
+      <div class="op-report-kpis">
+        <div><span>Conversations</span><b>${esc(h.conversations??0)}</b></div>
+        <div><span>Leads</span><b>${esc(h.leads??0)}</b></div>
+        <div><span>RDV</span><b>${esc(h.meetings??0)}</b></div>
+        <div><span>Propositions</span><b>${esc(h.proposals??0)}</b></div>
+        <div><span>Gagnés</span><b>${esc(h.won??0)}</b></div>
+        <div><span>Pipeline</span><b>${money(h.pipeline_value,0)} €</b></div>
+        <div><span>CA gagné</span><b>${money(v.won_value,0)} €</b></div>
+        <div><span>Coût IA</span><b>${money(h.ai_cost_usd,3)}</b></div>
+      </div>
+      <div class="op-report-grid">
+        <section class="op-report-card">
+          <h3>Entonnoir de conversion</h3>
+          <div class="op-funnel">
+            <div><span>Chat → Lead</span><b>${h.conversation_to_lead_pct==null?'—':money(h.conversation_to_lead_pct,1)+' %'}</b></div>
+            <div><span>Lead → RDV</span><b>${h.lead_to_meeting_pct==null?'—':money(h.lead_to_meeting_pct,1)+' %'}</b></div>
+            <div><span>RDV → Proposition</span><b>${h.meeting_to_proposal_pct==null?'—':money(h.meeting_to_proposal_pct,1)+' %'}</b></div>
+            <div><span>Proposition → Gagné</span><b>${h.proposal_to_won_pct==null?'—':money(h.proposal_to_won_pct,1)+' %'}</b></div>
+          </div>
+        </section>
+        <section class="op-report-card">
+          <h3>Vitesse commerciale</h3>
+          <div class="op-funnel">
+            <div><span>Leads gagnés</span><b>${esc(v.won_leads??0)}</b></div>
+            <div><span>Délai moyen gagné</span><b>${v.avg_days_to_win==null?'—':money(v.avg_days_to_win,1)+' j'}</b></div>
+            <div><span>Âge moyen des leads</span><b>${v.avg_lead_age_days==null?'—':money(v.avg_lead_age_days,1)+' j'}</b></div>
+          </div>
+        </section>
+      </div>
+      <section class="op-report-card">
+        <h3>Pipeline par stade</h3>
+        <div class="op-report-table">
+          <div class="op-report-head"><span>Stade</span><span>Leads</span><span>Valeur</span><span>Score moyen</span><span>Prioritaires</span></div>
+          ${pipeline.map((x:any)=>`<div class="op-report-row"><span>${esc(x.stage)}</span><span>${esc(x.leads)}</span><span>${money(x.pipeline_value,0)} €</span><span>${esc(x.avg_lead_score??'—')}</span><span>${esc(x.high_priority??0)}</span></div>`).join('')||'<p class="op-empty">Aucune donnée de pipeline.</p>'}
+        </div>
+      </section>
+      <section class="op-report-card">
+        <h3>Performance IA</h3>
+        <div class="op-report-table">
+          <div class="op-report-head"><span>Provider</span><span>Modèle</span><span>Tier</span><span>Conversations</span><span>Leads</span><span>Gagnés</span><span>Coût IA</span></div>
+          ${ai.map((x:any)=>`<div class="op-report-row op-report-row-ai"><span>${esc(x.provider)}</span><span>${esc(x.model)}</span><span>${esc(x.ai_tier)}</span><span>${esc(x.conversations)}</span><span>${esc(x.leads)}</span><span>${esc(x.won_leads)}</span><span>${money(x.ai_cost_usd,4)}</span></div>`).join('')||'<p class="op-empty">Aucune donnée IA.</p>'}
+        </div>
+      </section>
+      <section class="op-report-card">
+        <h3>Historique mensuel</h3>
+        <div class="op-report-table">
+          <div class="op-report-head"><span>Mois</span><span>Chats</span><span>Leads</span><span>RDV</span><span>Propositions</span><span>Gagnés</span></div>
+          ${funnel.map((x:any)=>`<div class="op-report-row op-report-row-month"><span>${new Date(x.month).toLocaleDateString('fr-FR',{month:'short',year:'numeric'})}</span><span>${esc(x.conversations)}</span><span>${esc(x.leads)}</span><span>${esc(x.meetings)}</span><span>${esc(x.proposals)}</span><span>${esc(x.won)}</span></div>`).join('')||'<p class="op-empty">Aucun historique.</p>'}
+        </div>
+      </section>`;
+  }catch(e:any){
+    box.innerHTML='<p class="op-error">'+esc(e?.message||e)+'</p>';
+  }
+}
 
 async function loadToday(){
   if(!selectedOrg) return;
