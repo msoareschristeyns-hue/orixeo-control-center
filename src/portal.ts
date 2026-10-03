@@ -82,6 +82,7 @@ function renderShell(data:PortalData){
           <a id="op-crm-link">CRM</a>
           <a id="op-leads-link">Leads</a>
           <a id="op-convs-link">Conversations</a>
+          <a id="op-knowledge-link">Knowledge Center</a>
           <a id="op-governance-link">Gouvernance IA</a>
           <a id="op-review-link">Business Review</a>
           <a id="op-roi-link">ROI</a>
@@ -103,6 +104,10 @@ function renderShell(data:PortalData){
           <article><span>Appels IA ce mois</span><b>${esc(stats.ai_calls_month??0)}</b></article>
           <article><span>Coût IA</span><b>$${money(fin.ai_cost_usd,3)}</b></article>
           <article><span>Budget consommé</span><b>${fin.budget_consumption_pct==null?'—':money(fin.budget_consumption_pct,1)+' %'}</b></article>
+        </section>
+        <section class="op-card" id="op-knowledge">
+          <div class="op-title"><h2>Knowledge & Document Center</h2><span>Documents, versions & RAG</span></div>
+          <div id="op-knowledge-content"><p class="op-empty">Chargement des documents…</p></div>
         </section>
         <section class="op-card" id="op-governance">
           <div class="op-title"><h2>Gouvernance IA</h2><span>Usages, outils, données & revues</span></div>
@@ -170,6 +175,7 @@ function renderShell(data:PortalData){
   root.querySelector('#op-crm-link')?.addEventListener('click',()=>document.querySelector('#op-crm')?.scrollIntoView({behavior:'smooth'}));
   root.querySelector('#op-leads-link')?.addEventListener('click',()=>document.querySelector('#op-leads')?.scrollIntoView({behavior:'smooth'}));
   root.querySelector('#op-convs-link')?.addEventListener('click',()=>document.querySelector('#op-convs')?.scrollIntoView({behavior:'smooth'}));
+  root.querySelector('#op-knowledge-link')?.addEventListener('click',()=>document.querySelector('#op-knowledge')?.scrollIntoView({behavior:'smooth'}));
   root.querySelector('#op-governance-link')?.addEventListener('click',()=>document.querySelector('#op-governance')?.scrollIntoView({behavior:'smooth'}));
   root.querySelector('#op-review-link')?.addEventListener('click',()=>document.querySelector('#op-review')?.scrollIntoView({behavior:'smooth'}));
   root.querySelector('#op-roi-link')?.addEventListener('click',()=>document.querySelector('#op-roi')?.scrollIntoView({behavior:'smooth'}));
@@ -177,6 +183,7 @@ function renderShell(data:PortalData){
   root.querySelector('#op-usage-link')?.addEventListener('click',()=>document.querySelector('#op-usage')?.scrollIntoView({behavior:'smooth'}));
   root.querySelectorAll('.op-conv').forEach(btn=>btn.addEventListener('click',()=>void openConversation((btn as HTMLElement).dataset.id!)));
   void loadToday();
+  void loadKnowledge();
   void loadGovernance();
   void loadBusinessReviews();
   void loadRoi();
@@ -193,6 +200,140 @@ function renderShell(data:PortalData){
 
 
 
+
+
+async function loadKnowledge(){
+  if(!selectedOrg) return;
+  const box=root.querySelector('#op-knowledge-content') as HTMLElement|null;
+  if(!box) return;
+  try{
+    const [data,gov]=await Promise.all([
+      api('/portal/knowledge?organization_id='+encodeURIComponent(selectedOrg)),
+      api('/portal/governance?organization_id='+encodeURIComponent(selectedOrg))
+    ]);
+    const docs=data.documents||[], links=data.links||[], useCases=gov.use_cases||[];
+    const canWrite=['owner','admin','builder','operator'].includes(data.organization?.role);
+    const canApprove=['owner','admin','builder'].includes(data.organization?.role);
+
+    box.innerHTML=`
+      <div class="op-knowledge-grid">
+        <section class="op-report-card">
+          <h3>Nouveau document / nouvelle version</h3>
+          <form id="op-knowledge-form" class="op-gov-form">
+            <input name="title" placeholder="Titre du document" required ${canWrite?'':'disabled'}>
+            <textarea name="content" placeholder="Contenu texte à intégrer au Knowledge Center" ${canWrite?'':'disabled'}></textarea>
+            <input name="storage_path" placeholder="Chemin fichier serveur / Storage (optionnel)" ${canWrite?'':'disabled'}>
+            <input name="mime_type" value="text/plain" placeholder="MIME type" ${canWrite?'':'disabled'}>
+            <select name="document_id" ${canWrite?'':'disabled'}>
+              <option value="">Créer un nouveau document</option>
+              ${docs.map((d:any)=>`<option value="${esc(d.id)}">Nouvelle version de ${esc(d.title)}</option>`).join('')}
+            </select>
+            <button ${canWrite?'':'disabled'}>Créer la version</button>
+          </form>
+        </section>
+
+        <section class="op-report-card">
+          <h3>Rattacher un document</h3>
+          <form id="op-knowledge-link-form" class="op-gov-form">
+            <select name="document_id" required ${canWrite?'':'disabled'}>
+              <option value="">Choisir un document</option>
+              ${docs.map((d:any)=>`<option value="${esc(d.id)}">${esc(d.title)}</option>`).join('')}
+            </select>
+            <select name="use_case_id" ${canWrite?'':'disabled'}>
+              <option value="">Aucun cas d'usage</option>
+              ${useCases.map((u:any)=>`<option value="${esc(u.id)}">${esc(u.name)}</option>`).join('')}
+            </select>
+            <select name="link_type" ${canWrite?'':'disabled'}>
+              <option value="reference">Référence</option>
+              <option value="evidence">Preuve</option>
+              <option value="procedure">Procédure</option>
+              <option value="charter">Charte</option>
+              <option value="meeting_note">Compte rendu</option>
+              <option value="training">Formation</option>
+              <option value="other">Autre</option>
+            </select>
+            <button ${canWrite?'':'disabled'}>Créer le rattachement</button>
+          </form>
+        </section>
+      </div>
+
+      <section class="op-report-card">
+        <h3>Documents et versions courantes</h3>
+        <div class="op-knowledge-list">
+          ${docs.map((d:any)=>{
+            const docLinks=links.filter((l:any)=>l.document_id===d.id);
+            return `
+            <article class="op-knowledge-doc">
+              <div class="op-knowledge-head">
+                <div><b>${esc(d.title)}</b><span>${esc(d.source_type)} · ${esc(d.status)}</span></div>
+                <div><strong>v${esc(d.version_number??'—')}</strong><span>${esc(d.version_status||'sans version')}</span></div>
+              </div>
+              <div class="op-knowledge-meta">
+                <span>RAG ${d.rag_enabled?'activé':'désactivé'}</span>
+                <span>${esc(d.mime_type||'—')}</span>
+                <span>${d.file_size_bytes?esc(d.file_size_bytes)+' octets':'texte / taille inconnue'}</span>
+                <span>Maj ${new Date(d.updated_at).toLocaleDateString('fr-FR')}</span>
+              </div>
+              <div class="op-knowledge-links">
+                ${docLinks.map((l:any)=>`<span>${esc(l.link_type)}${l.governance_use_case_name?' · '+esc(l.governance_use_case_name):''}</span>`).join('')||'<span>Aucun rattachement métier</span>'}
+              </div>
+              ${canApprove && d.version_id && d.version_status!=='approved'?`
+                <div class="op-knowledge-actions">
+                  <button class="op-knowledge-approve" data-version="${esc(d.version_id)}" data-rag="false">Approuver</button>
+                  <button class="op-knowledge-approve op-rag" data-version="${esc(d.version_id)}" data-rag="true">Approuver + RAG</button>
+                </div>`:''}
+            </article>`}).join('')||'<p class="op-empty">Aucun document.</p>'}
+        </div>
+      </section>`;
+
+    const form=box.querySelector('#op-knowledge-form') as HTMLFormElement|null;
+    form?.addEventListener('submit',async e=>{
+      e.preventDefault();
+      const fd=new FormData(form);
+      const content=String(fd.get('content')||'');
+      await api('/portal/knowledge/document?organization_id='+encodeURIComponent(selectedOrg!),{
+        method:'POST',
+        body:JSON.stringify({
+          document_id:String(fd.get('document_id')||''),
+          title:String(fd.get('title')||''),
+          content_text:content,
+          storage_path:String(fd.get('storage_path')||''),
+          mime_type:String(fd.get('mime_type')||'text/plain'),
+          file_size_bytes:content?new Blob([content]).size:null
+        })
+      });
+      await loadKnowledge();
+    });
+
+    const linkForm=box.querySelector('#op-knowledge-link-form') as HTMLFormElement|null;
+    linkForm?.addEventListener('submit',async e=>{
+      e.preventDefault();
+      const fd=new FormData(linkForm);
+      await api('/portal/knowledge/link?organization_id='+encodeURIComponent(selectedOrg!),{
+        method:'POST',
+        body:JSON.stringify({
+          document_id:String(fd.get('document_id')||''),
+          governance_use_case_id:String(fd.get('use_case_id')||''),
+          link_type:String(fd.get('link_type')||'reference')
+        })
+      });
+      await loadKnowledge();
+    });
+
+    box.querySelectorAll('.op-knowledge-approve').forEach(btn=>btn.addEventListener('click',async()=>{
+      await api('/portal/knowledge/approve?organization_id='+encodeURIComponent(selectedOrg!),{
+        method:'POST',
+        body:JSON.stringify({
+          version_id:(btn as HTMLElement).dataset.version,
+          rag_enabled:(btn as HTMLElement).dataset.rag==='true'
+        })
+      });
+      await loadKnowledge();
+    }));
+  }catch(e:any){
+    box.innerHTML='<p class="op-error">'+esc(e?.message||e)+'</p>';
+  }
+}
 
 async function loadGovernance(){
   if(!selectedOrg) return;
