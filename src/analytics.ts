@@ -31,6 +31,8 @@ function render(data:any){
   const usage=data?.usage||[];
   const recent=data?.recent||[];
   const leads=data?.leads_by_status||[];
+  const financial=data?.financial||{};
+  const alerts=data?.budget_alerts||[];
   const leadRows = leads.length
     ? leads.map((x:any)=>`<div class="oa-lead-row"><span>${esc(x.status)}</span><b>${esc(x.count)}</b></div>`).join('')
     : '<p class="oa-empty">Pas encore de leads enregistrés.</p>';
@@ -68,6 +70,25 @@ function render(data:any){
       <article><span>Coût IA</span><b>$${money(k.total_cost_usd)}</b></article>
       <article><span>Coût / lead</span><b>$${money(k.cost_per_lead_usd)}</b></article>
       <article><span>Score moyen</span><b>${esc(k.avg_lead_score??'—')}</b></article>
+    </div>
+    <div class="oa-finance">
+      <section class="oa-card">
+        <div class="oa-card-title"><h3>Pilotage financier</h3><span>${esc(financial.plan_name||'Non configuré')}</span></div>
+        <div class="oa-finance-grid">
+          <div><span>Abonnement mensuel</span><b>${money(financial.monthly_subscription_amount,2)} ${esc(financial.currency||'EUR')}</b></div>
+          <div><span>Budget IA inclus</span><b>${money(financial.included_ai_budget_usd,2)}</b></div>
+          <div><span>Coût IA courant</span><b>${money(financial.ai_cost_usd,4)}</b></div>
+          <div><span>Budget consommé</span><b>${financial.budget_consumption_pct==null?'—':money(financial.budget_consumption_pct,1)+' %'}</b></div>
+          <div><span>Marge avant infra</span><b>${financial.gross_margin_before_infra==null?'—':money(financial.gross_margin_before_infra,2)+' '+esc(financial.currency||'EUR')}</b></div>
+          <div><span>Taux de marge</span><b>${financial.gross_margin_pct==null?'—':money(financial.gross_margin_pct,1)+' %'}</b></div>
+        </div>
+        <div class="oa-budget-line"><div style="width:${Math.min(100,Math.max(0,Number(financial.budget_consumption_pct||0)))}%"></div></div>
+        <small>Mode de contrôle : ${esc(financial.enforcement_mode||'observe')} · action : ${esc(financial.soft_action||'none')}</small>
+      </section>
+      <section class="oa-card">
+        <div class="oa-card-title"><h3>Alertes budget</h3><span>${alerts.length} récente(s)</span></div>
+        <div class="oa-alerts">${alerts.length?alerts.slice(0,6).map((a:any)=>`<div class="oa-alert oa-alert-${esc(a.alert_type)}"><span>${esc(a.alert_type)}</span><b>${money(a.current_cost_usd,3)}</b><small>${new Date(a.created_at).toLocaleDateString('fr-FR')}</small></div>`).join(''):'<p class="oa-empty">Aucune alerte budgétaire.</p>'}</div>
+      </section>
     </div>
     <div class="oa-grid">
       <section class="oa-card oa-wide">
