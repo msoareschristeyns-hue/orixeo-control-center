@@ -174,7 +174,7 @@ async function openLead(id:string){
   try{
     const data=await api('/portal/crm/lead?organization_id='+encodeURIComponent(selectedOrg)+'&lead_id='+encodeURIComponent(id));
     const l=data.lead||{};
-    const notes=data.notes||[],tasks=data.tasks||[],activities=data.activities||[],appointments=data.appointments||[];
+    const notes=data.notes||[],tasks=data.tasks||[],activities=data.activities||[],appointments=data.appointments||[],communications=data.communications||[];
     const canWrite=['owner','admin','builder','operator'].includes(data.role);
     const content=root.querySelector('#op-modal-content')!;
     content.innerHTML=`
@@ -192,6 +192,33 @@ async function openLead(id:string){
         <section><h3>Coordonnées</h3><p>${esc(l.email||'—')}</p><p>${esc(l.phone||'—')}</p><p>${esc(l.need||'—')}</p></section>
         <section><h3>Valeur / priorité</h3><p>Priorité : ${esc(l.priority||'normal')}</p><p>Valeur : ${l.value_estimate==null?'—':money(l.value_estimate,2)+' '+esc(l.currency||'EUR')}</p><p>Prochaine action : ${l.next_action_at?new Date(l.next_action_at).toLocaleString('fr-FR'):'—'}</p></section>
       </div>
+      <section class="op-comm-panel">
+        <div class="op-title"><h3>Communication commerciale</h3><span>Validation humaine obligatoire</span></div>
+        <div class="op-comm-generate">
+          <select id="op-comm-type" ${canWrite?'':'disabled'}>
+            <option value="first_contact">Premier contact</option>
+            <option value="follow_up" selected>Relance</option>
+            <option value="meeting_confirmation">Confirmation de rendez-vous</option>
+            <option value="meeting_summary">Compte rendu de rendez-vous</option>
+            <option value="proposal">Proposition</option>
+            <option value="reply">Réponse</option>
+            <option value="thank_you">Remerciement</option>
+          </select>
+          <input id="op-comm-instruction" placeholder="Instruction optionnelle pour l'IA" ${canWrite?'':'disabled'}/>
+          <button id="op-generate-comm" ${canWrite?'':'disabled'}>Générer un brouillon</button>
+        </div>
+        <div class="op-communications">
+          ${communications.map((m:any)=>`
+            <article class="op-communication" data-id="${esc(m.id)}">
+              <div><b>${esc(m.subject||'(sans objet)')}</b><span>${esc(m.communication_type)} · ${esc(m.status)}</span></div>
+              <textarea class="op-comm-body" ${['sent','cancelled'].includes(m.status)||!canWrite?'disabled':''}>${esc(m.body_text||'')}</textarea>
+              <div class="op-comm-actions">
+                <button class="op-save-comm" ${['sent','cancelled'].includes(m.status)||!canWrite?'disabled':''}>Enregistrer</button>
+                <button class="op-approve-comm" ${m.status==='draft'&&canWrite?'':'disabled'}>Approuver</button>
+              </div>
+            </article>`).join('')||'<p class="op-empty">Aucun brouillon.</p>'}
+        </div>
+      </section>
       <div class="op-crm-actions">
         <section><h3>Ajouter une note</h3><textarea id="op-note-text" placeholder="Compte rendu, échange, information utile…" ${canWrite?'':'disabled'}></textarea><button id="op-add-note" ${canWrite?'':'disabled'}>Ajouter</button></section>
         <section><h3>Créer une relance</h3><input id="op-task-title" placeholder="Ex. Rappeler le client" ${canWrite?'':'disabled'}/><input id="op-task-date" type="datetime-local" ${canWrite?'':'disabled'}/><button id="op-add-task" ${canWrite?'':'disabled'}>Créer</button></section>
@@ -212,6 +239,26 @@ async function openLead(id:string){
       await openLead(id);
       await loadCrmBoard();
     };
+
+    const commAction=async(path:string,payload:any)=>{
+      await api(path+'?organization_id='+encodeURIComponent(selectedOrg!),{method:'POST',body:JSON.stringify(payload)});
+      await openLead(id);
+    };
+    content.querySelector('#op-generate-comm')?.addEventListener('click',()=>void commAction('/portal/crm/communication/generate',{
+      lead_id:id,
+      communication_type:(content.querySelector('#op-comm-type') as HTMLSelectElement).value,
+      instruction:(content.querySelector('#op-comm-instruction') as HTMLInputElement).value
+    }));
+    content.querySelectorAll('.op-communication').forEach(card=>{
+      const commId=(card as HTMLElement).dataset.id!;
+      const bodyEl=card.querySelector('.op-comm-body') as HTMLTextAreaElement;
+      card.querySelector('.op-save-comm')?.addEventListener('click',()=>void commAction('/portal/crm/communication/update',{
+        communication_id:commId,action:'save',body_text:bodyEl.value,subject:(card.querySelector('b')?.textContent||'')
+      }));
+      card.querySelector('.op-approve-comm')?.addEventListener('click',()=>void commAction('/portal/crm/communication/update',{
+        communication_id:commId,action:'approve',body_text:bodyEl.value,subject:(card.querySelector('b')?.textContent||'')
+      }));
+    });
 
     content.querySelector('#op-save-stage')?.addEventListener('click',()=>void action({action:'stage',stage:(content.querySelector('#op-stage-select') as HTMLSelectElement).value}));
     content.querySelector('#op-add-note')?.addEventListener('click',()=>void action({action:'note',note:(content.querySelector('#op-note-text') as HTMLTextAreaElement).value}));
