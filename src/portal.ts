@@ -82,6 +82,7 @@ function renderShell(data:PortalData){
           <a id="op-crm-link">CRM</a>
           <a id="op-leads-link">Leads</a>
           <a id="op-convs-link">Conversations</a>
+          <a id="op-workflow-link">Workflow Center</a>
           <a id="op-knowledge-link">Knowledge Center</a>
           <a id="op-governance-link">Gouvernance IA</a>
           <a id="op-review-link">Business Review</a>
@@ -104,6 +105,10 @@ function renderShell(data:PortalData){
           <article><span>Appels IA ce mois</span><b>${esc(stats.ai_calls_month??0)}</b></article>
           <article><span>Coût IA</span><b>$${money(fin.ai_cost_usd,3)}</b></article>
           <article><span>Budget consommé</span><b>${fin.budget_consumption_pct==null?'—':money(fin.budget_consumption_pct,1)+' %'}</b></article>
+        </section>
+        <section class="op-card" id="op-workflow">
+          <div class="op-title"><h2>Workflow & Automation Center</h2><span>Règles, actions & historique</span></div>
+          <div id="op-workflow-content"><p class="op-empty">Chargement des workflows…</p></div>
         </section>
         <section class="op-card" id="op-knowledge">
           <div class="op-title"><h2>Knowledge & Document Center</h2><span>Documents, versions & RAG</span></div>
@@ -175,6 +180,7 @@ function renderShell(data:PortalData){
   root.querySelector('#op-crm-link')?.addEventListener('click',()=>document.querySelector('#op-crm')?.scrollIntoView({behavior:'smooth'}));
   root.querySelector('#op-leads-link')?.addEventListener('click',()=>document.querySelector('#op-leads')?.scrollIntoView({behavior:'smooth'}));
   root.querySelector('#op-convs-link')?.addEventListener('click',()=>document.querySelector('#op-convs')?.scrollIntoView({behavior:'smooth'}));
+  root.querySelector('#op-workflow-link')?.addEventListener('click',()=>document.querySelector('#op-workflow')?.scrollIntoView({behavior:'smooth'}));
   root.querySelector('#op-knowledge-link')?.addEventListener('click',()=>document.querySelector('#op-knowledge')?.scrollIntoView({behavior:'smooth'}));
   root.querySelector('#op-governance-link')?.addEventListener('click',()=>document.querySelector('#op-governance')?.scrollIntoView({behavior:'smooth'}));
   root.querySelector('#op-review-link')?.addEventListener('click',()=>document.querySelector('#op-review')?.scrollIntoView({behavior:'smooth'}));
@@ -183,6 +189,7 @@ function renderShell(data:PortalData){
   root.querySelector('#op-usage-link')?.addEventListener('click',()=>document.querySelector('#op-usage')?.scrollIntoView({behavior:'smooth'}));
   root.querySelectorAll('.op-conv').forEach(btn=>btn.addEventListener('click',()=>void openConversation((btn as HTMLElement).dataset.id!)));
   void loadToday();
+  void loadWorkflow();
   void loadKnowledge();
   void loadGovernance();
   void loadBusinessReviews();
@@ -201,6 +208,147 @@ function renderShell(data:PortalData){
 
 
 
+
+
+async function loadWorkflow(){
+  if(!selectedOrg) return;
+  const box=root.querySelector('#op-workflow-content') as HTMLElement|null;
+  if(!box) return;
+  try{
+    const data=await api('/portal/workflows?organization_id='+encodeURIComponent(selectedOrg));
+    const rules=data.rules||[], runs=data.runs||[];
+    const canAdmin=['owner','admin','builder'].includes(data.organization?.role);
+    const canRun=['owner','admin','builder','operator'].includes(data.organization?.role);
+
+    box.innerHTML=`
+      <div class="op-workflow-toolbar">
+        <button id="op-workflow-seed" ${canAdmin?'':'disabled'}>Charger les modèles</button>
+        <button id="op-workflow-run-all" ${canRun?'':'disabled'}>Exécuter maintenant</button>
+      </div>
+
+      <div class="op-workflow-grid">
+        <section class="op-report-card">
+          <h3>Créer une règle</h3>
+          <form id="op-workflow-form" class="op-gov-form">
+            <input name="name" placeholder="Nom de la règle" required ${canAdmin?'':'disabled'}>
+            <textarea name="description" placeholder="Description" ${canAdmin?'':'disabled'}></textarea>
+            <label>Déclencheur
+              <select name="trigger" ${canAdmin?'':'disabled'}>
+                <option value="lead_qualified">Lead qualifié</option>
+                <option value="followup_due">Relance échue</option>
+                <option value="budget_threshold">Budget IA</option>
+                <option value="governance_review_due">Revue gouvernance échue</option>
+                <option value="document_approved">Document approuvé</option>
+                <option value="schedule">Planifié</option>
+              </select>
+            </label>
+            <label>Action
+              <select name="action" ${canAdmin?'':'disabled'}>
+                <option value="create_task">Créer une tâche</option>
+                <option value="create_followup">Créer une relance</option>
+                <option value="create_alert">Créer une alerte</option>
+                <option value="refresh_rag">Rafraîchir le RAG</option>
+                <option value="create_security_event">Créer un événement sécurité</option>
+                <option value="create_note">Créer une note</option>
+              </select>
+            </label>
+            <input name="cooldown" type="number" min="0" value="60" placeholder="Cooldown en minutes" ${canAdmin?'':'disabled'}>
+            <textarea name="condition" placeholder='Condition JSON, ex. {"threshold_pct":90}' ${canAdmin?'':'disabled'}></textarea>
+            <textarea name="config" placeholder='Action JSON, ex. {"severity":"warning"}' ${canAdmin?'':'disabled'}></textarea>
+            <label><input name="enabled" type="checkbox" checked ${canAdmin?'':'disabled'}> Active</label>
+            <button ${canAdmin?'':'disabled'}>Créer la règle</button>
+          </form>
+        </section>
+
+        <section class="op-report-card">
+          <h3>Règles actives & modèles</h3>
+          <div class="op-workflow-rules">
+            ${rules.map((r:any)=>`
+              <article class="op-workflow-rule ${r.enabled?'enabled':'disabled'}">
+                <div><b>${esc(r.name)}</b><span>${r.metadata?.template?'modèle · ':''}${r.enabled?'active':'inactive'}</span></div>
+                <p>${esc(r.description||'')}</p>
+                <div class="op-workflow-tags">
+                  <span>${esc(r.trigger_key)}</span>
+                  <span>→</span>
+                  <span>${esc(r.action_key)}</span>
+                  <span>cooldown ${esc(r.cooldown_minutes)} min</span>
+                </div>
+                <div class="op-workflow-actions">
+                  <button class="op-workflow-toggle" data-id="${esc(r.id)}" data-enabled="${r.enabled?'false':'true'}" ${canAdmin?'':'disabled'}>${r.enabled?'Désactiver':'Activer'}</button>
+                  <button class="op-workflow-run" data-id="${esc(r.id)}" ${canRun?'':'disabled'}>Exécuter</button>
+                </div>
+              </article>`).join('')||'<p class="op-empty">Aucune règle. Charge les modèles ou crée la première règle.</p>'}
+          </div>
+        </section>
+      </div>
+
+      <section class="op-report-card">
+        <h3>Historique d'exécution</h3>
+        <div class="op-workflow-runs">
+          ${runs.map((r:any)=>`
+            <article class="op-workflow-run-row op-${esc(r.status)}">
+              <div><b>${esc(r.rule_name)}</b><span>${esc(r.trigger_key)} · ${esc(r.status)}</span></div>
+              <small>${new Date(r.started_at).toLocaleString('fr-FR')}${r.entity_type?' · '+esc(r.entity_type):''}</small>
+              <p>${r.error_message?esc(r.error_message):esc(JSON.stringify(r.output||{}))}</p>
+            </article>`).join('')||'<p class="op-empty">Aucune exécution enregistrée.</p>'}
+        </div>
+      </section>`;
+
+    const form=box.querySelector('#op-workflow-form') as HTMLFormElement|null;
+    form?.addEventListener('submit',async e=>{
+      e.preventDefault();
+      const fd=new FormData(form);
+      let condition={}, config={};
+      try{condition=JSON.parse(String(fd.get('condition')||'{}'));}catch{}
+      try{config=JSON.parse(String(fd.get('config')||'{}'));}catch{}
+      await api('/portal/workflows/rule?organization_id='+encodeURIComponent(selectedOrg!),{
+        method:'POST',
+        body:JSON.stringify({
+          name:String(fd.get('name')||''),
+          description:String(fd.get('description')||''),
+          trigger_key:String(fd.get('trigger')||'schedule'),
+          action_key:String(fd.get('action')||'create_alert'),
+          cooldown_minutes:Number(fd.get('cooldown')||60),
+          condition_json:condition,
+          action_config:config,
+          enabled:fd.get('enabled')==='on'
+        })
+      });
+      await loadWorkflow();
+    });
+
+    box.querySelector('#op-workflow-seed')?.addEventListener('click',async()=>{
+      await api('/portal/workflows/seed?organization_id='+encodeURIComponent(selectedOrg!),{method:'POST',body:'{}'});
+      await loadWorkflow();
+    });
+
+    box.querySelector('#op-workflow-run-all')?.addEventListener('click',async()=>{
+      await api('/portal/workflows/run?organization_id='+encodeURIComponent(selectedOrg!),{method:'POST',body:'{}'});
+      await loadWorkflow();
+    });
+
+    box.querySelectorAll('.op-workflow-run').forEach(btn=>btn.addEventListener('click',async()=>{
+      await api('/portal/workflows/run?organization_id='+encodeURIComponent(selectedOrg!),{
+        method:'POST',
+        body:JSON.stringify({rule_id:(btn as HTMLElement).dataset.id})
+      });
+      await loadWorkflow();
+    }));
+
+    box.querySelectorAll('.op-workflow-toggle').forEach(btn=>btn.addEventListener('click',async()=>{
+      const id=(btn as HTMLElement).dataset.id!;
+      const current=rules.find((r:any)=>r.id===id);
+      if(!current) return;
+      await api('/portal/workflows/rule?organization_id='+encodeURIComponent(selectedOrg!),{
+        method:'POST',
+        body:JSON.stringify({...current,enabled:(btn as HTMLElement).dataset.enabled==='true'})
+      });
+      await loadWorkflow();
+    }));
+  }catch(e:any){
+    box.innerHTML='<p class="op-error">'+esc(e?.message||e)+'</p>';
+  }
+}
 
 async function loadKnowledge(){
   if(!selectedOrg) return;
