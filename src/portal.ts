@@ -78,6 +78,7 @@ function renderShell(data:PortalData){
         <div class="op-org"><b>${esc(org.name)}</b><span>${esc(org.role)}</span></div>
         <nav>
           <a class="active">Vue d'ensemble</a>
+          <a id="op-crm-link">CRM</a>
           <a id="op-leads-link">Leads</a>
           <a id="op-convs-link">Conversations</a>
           <a id="op-usage-link">Usage IA</a>
@@ -93,6 +94,10 @@ function renderShell(data:PortalData){
           <article><span>Appels IA ce mois</span><b>${esc(stats.ai_calls_month??0)}</b></article>
           <article><span>Coût IA</span><b>$${money(fin.ai_cost_usd,3)}</b></article>
           <article><span>Budget consommé</span><b>${fin.budget_consumption_pct==null?'—':money(fin.budget_consumption_pct,1)+' %'}</b></article>
+        </section>
+        <section class="op-card" id="op-crm">
+          <div class="op-title"><h2>Pipeline commercial</h2><span>Sales AI CRM</span></div>
+          <div id="op-crm-board"><p class="op-empty">Chargement du pipeline…</p></div>
         </section>
         <section class="op-card" id="op-leads">
           <div class="op-title"><h2>Leads récents</h2><span>25 derniers</span></div>
@@ -130,11 +135,92 @@ function renderShell(data:PortalData){
     </div>`;
 
   root.querySelector('#op-logout')?.addEventListener('click',()=>supabase.auth.signOut());
+  root.querySelector('#op-crm-link')?.addEventListener('click',()=>document.querySelector('#op-crm')?.scrollIntoView({behavior:'smooth'}));
   root.querySelector('#op-leads-link')?.addEventListener('click',()=>document.querySelector('#op-leads')?.scrollIntoView({behavior:'smooth'}));
   root.querySelector('#op-convs-link')?.addEventListener('click',()=>document.querySelector('#op-convs')?.scrollIntoView({behavior:'smooth'}));
   root.querySelector('#op-usage-link')?.addEventListener('click',()=>document.querySelector('#op-usage')?.scrollIntoView({behavior:'smooth'}));
   root.querySelectorAll('.op-conv').forEach(btn=>btn.addEventListener('click',()=>void openConversation((btn as HTMLElement).dataset.id!)));
+  void loadCrmBoard();
   root.querySelector('#op-modal-close')?.addEventListener('click',()=>root.querySelector('#op-modal')?.classList.remove('open'));
+}
+
+
+async function loadCrmBoard(){
+  if(!selectedOrg) return;
+  const board=root.querySelector('#op-crm-board') as HTMLElement|null;
+  if(!board) return;
+  try{
+    const data=await api('/portal/crm/pipeline?organization_id='+encodeURIComponent(selectedOrg));
+    const stages=['new','qualified','contacted','meeting','proposal','won','lost','nurture'];
+    const labels:any={new:'Nouveau',qualified:'Qualifié',contacted:'Contacté',meeting:'Rendez-vous',proposal:'Proposition',won:'Gagné',lost:'Perdu',nurture:'À nourrir'};
+    board.innerHTML='<div class="op-pipeline">'+stages.map(stage=>{
+      const leads=(data.leads||[]).filter((l:any)=>l.stage===stage);
+      return `<section class="op-stage"><header><b>${labels[stage]}</b><span>${leads.length}</span></header><div>${leads.map((l:any)=>`
+        <button class="op-lead-card" data-id="${esc(l.id)}">
+          <b>${esc([l.first_name,l.last_name].filter(Boolean).join(' ')||l.email||'Sans nom')}</b>
+          <span>${esc(l.company||'—')}</span>
+          <small>${esc(l.need||'—')}</small>
+          <em>${esc(l.metadata?.lead_score??'—')}/100</em>
+        </button>`).join('')||'<p class="op-empty">Aucun lead</p>'}</div></section>`;
+    }).join('')+'</div>';
+    board.querySelectorAll('.op-lead-card').forEach(btn=>btn.addEventListener('click',()=>void openLead((btn as HTMLElement).dataset.id!)));
+  }catch(e:any){
+    board.innerHTML='<p class="op-error">'+esc(e?.message||e)+'</p>';
+  }
+}
+
+async function openLead(id:string){
+  if(!selectedOrg) return;
+  try{
+    const data=await api('/portal/crm/lead?organization_id='+encodeURIComponent(selectedOrg)+'&lead_id='+encodeURIComponent(id));
+    const l=data.lead||{};
+    const notes=data.notes||[],tasks=data.tasks||[],activities=data.activities||[],appointments=data.appointments||[];
+    const canWrite=['owner','admin','builder','operator'].includes(data.role);
+    const content=root.querySelector('#op-modal-content')!;
+    content.innerHTML=`
+      <div class="op-lead-head">
+        <div><small>LEAD</small><h2>${esc([l.first_name,l.last_name].filter(Boolean).join(' ')||l.email||'Sans nom')}</h2><p>${esc(l.company||'')}</p></div>
+        <div><span>Score</span><b>${esc(l.metadata?.lead_score??'—')}/100</b></div>
+      </div>
+      <div class="op-lead-actions">
+        <select id="op-stage-select" ${canWrite?'':'disabled'}>
+          ${['new','qualified','contacted','meeting','proposal','won','lost','nurture'].map(s=>`<option value="${s}" ${(l.stage||'new')===s?'selected':''}>${s}</option>`).join('')}
+        </select>
+        <button id="op-save-stage" ${canWrite?'':'disabled'}>Mettre à jour</button>
+      </div>
+      <div class="op-detail-grid">
+        <section><h3>Coordonnées</h3><p>${esc(l.email||'—')}</p><p>${esc(l.phone||'—')}</p><p>${esc(l.need||'—')}</p></section>
+        <section><h3>Valeur / priorité</h3><p>Priorité : ${esc(l.priority||'normal')}</p><p>Valeur : ${l.value_estimate==null?'—':money(l.value_estimate,2)+' '+esc(l.currency||'EUR')}</p><p>Prochaine action : ${l.next_action_at?new Date(l.next_action_at).toLocaleString('fr-FR'):'—'}</p></section>
+      </div>
+      <div class="op-crm-actions">
+        <section><h3>Ajouter une note</h3><textarea id="op-note-text" placeholder="Compte rendu, échange, information utile…" ${canWrite?'':'disabled'}></textarea><button id="op-add-note" ${canWrite?'':'disabled'}>Ajouter</button></section>
+        <section><h3>Créer une relance</h3><input id="op-task-title" placeholder="Ex. Rappeler le client" ${canWrite?'':'disabled'}/><input id="op-task-date" type="datetime-local" ${canWrite?'':'disabled'}/><button id="op-add-task" ${canWrite?'':'disabled'}>Créer</button></section>
+        <section><h3>Planifier un rendez-vous</h3><input id="op-meeting-start" type="datetime-local" ${canWrite?'':'disabled'}/><input id="op-meeting-end" type="datetime-local" ${canWrite?'':'disabled'}/><button id="op-add-meeting" ${canWrite?'':'disabled'}>Planifier</button></section>
+      </div>
+      <div class="op-detail-grid">
+        <section><h3>Notes</h3><div class="op-timeline">${notes.map((n:any)=>`<article><b>${esc(n.note_type)}</b><p>${esc(n.note)}</p><small>${new Date(n.created_at).toLocaleString('fr-FR')}</small></article>`).join('')||'<p class="op-empty">Aucune note.</p>'}</div></section>
+        <section><h3>Tâches</h3><div class="op-timeline">${tasks.map((t:any)=>`<article><b>${esc(t.title)}</b><p>${esc(t.task_type)} · ${esc(t.priority)}</p><small>${t.due_at?new Date(t.due_at).toLocaleString('fr-FR'):'Sans échéance'} · ${esc(t.status)}</small>${t.status!=='done'&&canWrite?`<button class="op-task-done" data-task="${esc(t.id)}">Terminer</button>`:''}</article>`).join('')||'<p class="op-empty">Aucune tâche.</p>'}</div></section>
+      </div>
+      <section><h3>Historique</h3><div class="op-timeline">${activities.map((a:any)=>`<article><b>${esc(a.title)}</b><p>${esc(a.description||'')}</p><small>${new Date(a.created_at).toLocaleString('fr-FR')}</small></article>`).join('')||'<p class="op-empty">Aucune activité.</p>'}</div></section>
+      <section><h3>Rendez-vous</h3><div class="op-timeline">${appointments.map((a:any)=>`<article><b>${new Date(a.starts_at).toLocaleString('fr-FR')}</b><p>${esc(a.status)}</p></article>`).join('')||'<p class="op-empty">Aucun rendez-vous.</p>'}</div></section>`;
+
+    const modal=root.querySelector('#op-modal')!;
+    modal.classList.add('open');
+
+    const action=async(payload:any)=>{
+      await api('/portal/crm/action?organization_id='+encodeURIComponent(selectedOrg!),{method:'POST',body:JSON.stringify({lead_id:id,...payload})});
+      await openLead(id);
+      await loadCrmBoard();
+    };
+
+    content.querySelector('#op-save-stage')?.addEventListener('click',()=>void action({action:'stage',stage:(content.querySelector('#op-stage-select') as HTMLSelectElement).value}));
+    content.querySelector('#op-add-note')?.addEventListener('click',()=>void action({action:'note',note:(content.querySelector('#op-note-text') as HTMLTextAreaElement).value}));
+    content.querySelector('#op-add-task')?.addEventListener('click',()=>void action({action:'task',title:(content.querySelector('#op-task-title') as HTMLInputElement).value,due_at:(content.querySelector('#op-task-date') as HTMLInputElement).value||null}));
+    content.querySelector('#op-add-meeting')?.addEventListener('click',()=>void action({action:'appointment',starts_at:(content.querySelector('#op-meeting-start') as HTMLInputElement).value,ends_at:(content.querySelector('#op-meeting-end') as HTMLInputElement).value}));
+    content.querySelectorAll('.op-task-done').forEach(btn=>btn.addEventListener('click',()=>void action({action:'task_done',task_id:(btn as HTMLElement).dataset.task})));
+  }catch(e:any){
+    alert(e?.message||e);
+  }
 }
 
 async function openConversation(id:string){
