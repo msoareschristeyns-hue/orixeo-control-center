@@ -6,12 +6,15 @@ function required(name) {
 
 const baseUrl = () => required("SUPABASE_URL").replace(/\/$/, "");
 const serviceKey = () => required("SUPABASE_SERVICE_ROLE_KEY");
+const schema = () => process.env.SUPABASE_SCHEMA || "orixeo";
 
 async function request(path, { method = "GET", body, prefer } = {}) {
   const headers = {
     apikey: serviceKey(),
     Authorization: `Bearer ${serviceKey()}`,
-    "Content-Type": "application/json"
+    "Content-Type": "application/json",
+    "Accept-Profile": schema(),
+    "Content-Profile": schema()
   };
   if (prefer) headers.Prefer = prefer;
 
@@ -32,7 +35,7 @@ async function request(path, { method = "GET", body, prefer } = {}) {
 export async function createConversation({ sessionId, metadata = {} }) {
   const orgId = required("ORIXEO_ORGANIZATION_ID");
   const agentId = required("ORIXEO_AGENT_ID");
-  const rows = await request("orixeo.conversations", {
+  const rows = await request("conversations", {
     method: "POST",
     prefer: "return=representation",
     body: {
@@ -49,13 +52,13 @@ export async function createConversation({ sessionId, metadata = {} }) {
 
 export async function getConversationBySession(sessionId) {
   const q = encodeURIComponent(sessionId);
-  const rows = await request(`orixeo.conversations?external_session_id=eq.${q}&order=started_at.desc&limit=1`);
+  const rows = await request(`conversations?external_session_id=eq.${q}&order=started_at.desc&limit=1`);
   return rows?.[0] || null;
 }
 
 export async function addMessage(conversationId, role, content, payload = {}) {
   const orgId = required("ORIXEO_ORGANIZATION_ID");
-  const rows = await request("orixeo.messages", {
+  const rows = await request("messages", {
     method: "POST",
     prefer: "return=representation",
     body: {
@@ -70,13 +73,13 @@ export async function addMessage(conversationId, role, content, payload = {}) {
 }
 
 export async function getRecentMessages(conversationId, limit = 12) {
-  return request(`orixeo.messages?conversation_id=eq.${conversationId}&order=created_at.asc&limit=${limit}`);
+  return request(`messages?conversation_id=eq.${conversationId}&order=created_at.asc&limit=${limit}`);
 }
 
 export async function createLead({ conversationId, profile, score, band, offerKey, offerName }) {
   const orgId = required("ORIXEO_ORGANIZATION_ID");
   const agentId = required("ORIXEO_AGENT_ID");
-  const rows = await request("orixeo.leads", {
+  const rows = await request("leads", {
     method: "POST",
     prefer: "return=representation",
     body: {
@@ -103,7 +106,7 @@ export async function createLead({ conversationId, profile, score, band, offerKe
 }
 
 export async function updateConversation(conversationId, patch) {
-  const rows = await request(`orixeo.conversations?id=eq.${conversationId}`, {
+  const rows = await request(`conversations?id=eq.${conversationId}`, {
     method: "PATCH",
     prefer: "return=representation",
     body: patch
