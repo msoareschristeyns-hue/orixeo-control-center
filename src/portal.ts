@@ -82,6 +82,7 @@ function renderShell(data:PortalData){
           <a id="op-crm-link">CRM</a>
           <a id="op-leads-link">Leads</a>
           <a id="op-convs-link">Conversations</a>
+          <a id="op-governance-link">Gouvernance IA</a>
           <a id="op-review-link">Business Review</a>
           <a id="op-roi-link">ROI</a>
           <a id="op-reporting-link">Reporting</a>
@@ -102,6 +103,10 @@ function renderShell(data:PortalData){
           <article><span>Appels IA ce mois</span><b>${esc(stats.ai_calls_month??0)}</b></article>
           <article><span>Coût IA</span><b>$${money(fin.ai_cost_usd,3)}</b></article>
           <article><span>Budget consommé</span><b>${fin.budget_consumption_pct==null?'—':money(fin.budget_consumption_pct,1)+' %'}</b></article>
+        </section>
+        <section class="op-card" id="op-governance">
+          <div class="op-title"><h2>Gouvernance IA</h2><span>Usages, outils, données & revues</span></div>
+          <div id="op-governance-content"><p class="op-empty">Chargement de la gouvernance…</p></div>
         </section>
         <section class="op-card" id="op-review">
           <div class="op-title"><h2>Business Review mensuelle</h2><span>Synthèse & recommandations</span></div>
@@ -165,12 +170,14 @@ function renderShell(data:PortalData){
   root.querySelector('#op-crm-link')?.addEventListener('click',()=>document.querySelector('#op-crm')?.scrollIntoView({behavior:'smooth'}));
   root.querySelector('#op-leads-link')?.addEventListener('click',()=>document.querySelector('#op-leads')?.scrollIntoView({behavior:'smooth'}));
   root.querySelector('#op-convs-link')?.addEventListener('click',()=>document.querySelector('#op-convs')?.scrollIntoView({behavior:'smooth'}));
+  root.querySelector('#op-governance-link')?.addEventListener('click',()=>document.querySelector('#op-governance')?.scrollIntoView({behavior:'smooth'}));
   root.querySelector('#op-review-link')?.addEventListener('click',()=>document.querySelector('#op-review')?.scrollIntoView({behavior:'smooth'}));
   root.querySelector('#op-roi-link')?.addEventListener('click',()=>document.querySelector('#op-roi')?.scrollIntoView({behavior:'smooth'}));
   root.querySelector('#op-reporting-link')?.addEventListener('click',()=>document.querySelector('#op-reporting')?.scrollIntoView({behavior:'smooth'}));
   root.querySelector('#op-usage-link')?.addEventListener('click',()=>document.querySelector('#op-usage')?.scrollIntoView({behavior:'smooth'}));
   root.querySelectorAll('.op-conv').forEach(btn=>btn.addEventListener('click',()=>void openConversation((btn as HTMLElement).dataset.id!)));
   void loadToday();
+  void loadGovernance();
   void loadBusinessReviews();
   void loadRoi();
   void loadReporting();
@@ -185,6 +192,156 @@ function renderShell(data:PortalData){
 
 
 
+
+
+async function loadGovernance(){
+  if(!selectedOrg) return;
+  const box=root.querySelector('#op-governance-content') as HTMLElement|null;
+  if(!box) return;
+  try{
+    const data=await api('/portal/governance?organization_id='+encodeURIComponent(selectedOrg));
+    const o=data.overview||{}, useCases=data.use_cases||[], tools=data.tools||[], reviews=data.reviews||[];
+    const canWrite=['owner','admin','builder','operator'].includes(data.organization?.role);
+    const canReview=['owner','admin','builder'].includes(data.organization?.role);
+    box.innerHTML=`
+      <div class="op-gov-kpis">
+        <div><span>Score gouvernance</span><b>${esc(o.governance_score??100)}/100</b></div>
+        <div><span>Cas d'usage</span><b>${esc(o.total_use_cases??0)}</b></div>
+        <div><span>Approuvés</span><b>${esc(o.approved_use_cases??0)}</b></div>
+        <div><span>Risque élevé</span><b>${esc(o.high_risk_use_cases??0)}</b></div>
+        <div><span>Revues échues</span><b>${esc(o.overdue_reviews??0)}</b></div>
+        <div><span>Outils suivis</span><b>${esc(o.total_tools??0)}</b></div>
+      </div>
+
+      <div class="op-gov-grid">
+        <section class="op-report-card">
+          <h3>Ajouter un cas d'usage IA</h3>
+          <form id="op-gov-usecase-form" class="op-gov-form">
+            <input name="name" placeholder="Nom du cas d'usage" required ${canWrite?'':'disabled'}>
+            <input name="process" placeholder="Processus métier" ${canWrite?'':'disabled'}>
+            <input name="purpose" placeholder="Finalité" ${canWrite?'':'disabled'}>
+            <input name="system" placeholder="Outil / système IA" ${canWrite?'':'disabled'}>
+            <div class="op-gov-fields">
+              <label>Risque<select name="risk" ${canWrite?'':'disabled'}><option>low</option><option>medium</option><option>high</option><option>prohibited</option></select></label>
+              <label>Données<select name="sensitivity" ${canWrite?'':'disabled'}><option>public</option><option selected>internal</option><option>confidential</option><option>personal</option><option>sensitive</option></select></label>
+              <label>Fréquence revue (jours)<input name="frequency" type="number" min="1" value="180" ${canWrite?'':'disabled'}></label>
+            </div>
+            <textarea name="oversight" placeholder="Contrôle humain / validation" ${canWrite?'':'disabled'}></textarea>
+            <button ${canWrite?'':'disabled'}>Ajouter au registre</button>
+          </form>
+        </section>
+
+        <section class="op-report-card">
+          <h3>Politique outils × données</h3>
+          <form id="op-gov-tool-form" class="op-gov-form">
+            <input name="tool" placeholder="Ex. ChatGPT Enterprise" required ${canWrite?'':'disabled'}>
+            <input name="provider" placeholder="Fournisseur" ${canWrite?'':'disabled'}>
+            <label>Décision<select name="decision" ${canWrite?'':'disabled'}><option value="allow">Autorisé</option><option value="review" selected>À valider</option><option value="restrict">Restreint</option><option value="deny">Interdit</option></select></label>
+            <input name="levels" value="public,internal" placeholder="Niveaux autorisés, séparés par des virgules" ${canWrite?'':'disabled'}>
+            <textarea name="conditions" placeholder="Conditions d'utilisation" ${canWrite?'':'disabled'}></textarea>
+            <button ${canWrite?'':'disabled'}>Enregistrer la politique</button>
+          </form>
+        </section>
+      </div>
+
+      <section class="op-report-card">
+        <h3>Registre des usages IA</h3>
+        <div class="op-gov-list">
+          ${useCases.map((u:any)=>`
+            <article class="op-gov-usecase">
+              <div>
+                <b>${esc(u.name)}</b>
+                <span>${esc(u.business_process||'—')} · ${esc(u.status)}</span>
+              </div>
+              <div class="op-gov-tags">
+                <span>Risque ${esc(u.risk_level)}</span>
+                <span>Données ${esc(u.data_sensitivity)}</span>
+                <span>Outil ${esc(u.ai_system||'—')}</span>
+                <span>Prochaine revue ${u.next_review_at?new Date(u.next_review_at).toLocaleDateString('fr-FR'):'—'}</span>
+              </div>
+              <p>${esc(u.purpose||u.description||'')}</p>
+              ${canReview && !['retired','rejected'].includes(u.status)?`
+                <div class="op-gov-review">
+                  <select data-review-decision>
+                    <option value="approve">Approuver</option>
+                    <option value="approve_with_conditions">Approuver avec conditions</option>
+                    <option value="restrict">Restreindre</option>
+                    <option value="reject">Rejeter</option>
+                    <option value="retire">Retirer</option>
+                  </select>
+                  <input data-review-notes placeholder="Note de revue">
+                  <button class="op-gov-review-btn" data-id="${esc(u.id)}">Valider la revue</button>
+                </div>`:''}
+            </article>`).join('')||'<p class="op-empty">Aucun cas d’usage IA enregistré.</p>'}
+        </div>
+      </section>
+
+      <div class="op-gov-grid">
+        <section class="op-report-card">
+          <h3>Outils autorisés / interdits</h3>
+          <div class="op-gov-tools">
+            ${tools.map((t:any)=>`<article class="op-gov-tool op-gov-${esc(t.decision)}"><div><b>${esc(t.tool_name)}</b><span>${esc(t.provider||'')}</span></div><strong>${esc(t.decision)}</strong><small>Données : ${esc((t.allowed_data_levels||[]).join(', '))}</small><p>${esc(t.conditions||'')}</p></article>`).join('')||'<p class="op-empty">Aucune politique outil.</p>'}
+          </div>
+        </section>
+        <section class="op-report-card">
+          <h3>Historique des revues</h3>
+          <div class="op-timeline">
+            ${reviews.map((r:any)=>`<article><b>${esc(r.use_case_name)}</b><p>${esc(r.decision)}${r.notes?' · '+esc(r.notes):''}</p><small>${new Date(r.reviewed_at).toLocaleString('fr-FR')}</small></article>`).join('')||'<p class="op-empty">Aucune revue.</p>'}
+          </div>
+        </section>
+      </div>`;
+
+    const ucForm=box.querySelector('#op-gov-usecase-form') as HTMLFormElement|null;
+    ucForm?.addEventListener('submit',async e=>{
+      e.preventDefault(); const fd=new FormData(ucForm);
+      await api('/portal/governance/use-case?organization_id='+encodeURIComponent(selectedOrg!),{
+        method:'POST',
+        body:JSON.stringify({
+          name:String(fd.get('name')||''),
+          business_process:String(fd.get('process')||''),
+          purpose:String(fd.get('purpose')||''),
+          ai_system:String(fd.get('system')||''),
+          risk_level:String(fd.get('risk')||'low'),
+          data_sensitivity:String(fd.get('sensitivity')||'internal'),
+          review_frequency_days:Number(fd.get('frequency')||180),
+          human_oversight:String(fd.get('oversight')||''),
+          status:'draft'
+        })
+      });
+      await loadGovernance();
+    });
+
+    const toolForm=box.querySelector('#op-gov-tool-form') as HTMLFormElement|null;
+    toolForm?.addEventListener('submit',async e=>{
+      e.preventDefault(); const fd=new FormData(toolForm);
+      const levels=String(fd.get('levels')||'').split(',').map(v=>v.trim()).filter(Boolean);
+      await api('/portal/governance/tool?organization_id='+encodeURIComponent(selectedOrg!),{
+        method:'POST',
+        body:JSON.stringify({
+          tool_name:String(fd.get('tool')||''),
+          provider:String(fd.get('provider')||''),
+          decision:String(fd.get('decision')||'review'),
+          allowed_data_levels:levels,
+          conditions:String(fd.get('conditions')||'')
+        })
+      });
+      await loadGovernance();
+    });
+
+    box.querySelectorAll('.op-gov-review-btn').forEach(btn=>btn.addEventListener('click',async()=>{
+      const article=btn.closest('.op-gov-usecase')!;
+      const decision=(article.querySelector('[data-review-decision]') as HTMLSelectElement).value;
+      const notes=(article.querySelector('[data-review-notes]') as HTMLInputElement).value;
+      await api('/portal/governance/review?organization_id='+encodeURIComponent(selectedOrg!),{
+        method:'POST',
+        body:JSON.stringify({use_case_id:(btn as HTMLElement).dataset.id,decision,notes})
+      });
+      await loadGovernance();
+    }));
+  }catch(e:any){
+    box.innerHTML='<p class="op-error">'+esc(e?.message||e)+'</p>';
+  }
+}
 
 async function loadBusinessReviews(){
   if(!selectedOrg) return;
