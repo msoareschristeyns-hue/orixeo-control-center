@@ -82,6 +82,7 @@ function renderShell(data:PortalData){
           <a id="op-crm-link">CRM</a>
           <a id="op-leads-link">Leads</a>
           <a id="op-convs-link">Conversations</a>
+          <a id="op-review-link">Business Review</a>
           <a id="op-roi-link">ROI</a>
           <a id="op-reporting-link">Reporting</a>
           <a id="op-usage-link">Usage IA</a>
@@ -101,6 +102,10 @@ function renderShell(data:PortalData){
           <article><span>Appels IA ce mois</span><b>${esc(stats.ai_calls_month??0)}</b></article>
           <article><span>Coût IA</span><b>$${money(fin.ai_cost_usd,3)}</b></article>
           <article><span>Budget consommé</span><b>${fin.budget_consumption_pct==null?'—':money(fin.budget_consumption_pct,1)+' %'}</b></article>
+        </section>
+        <section class="op-card" id="op-review">
+          <div class="op-title"><h2>Business Review mensuelle</h2><span>Synthèse & recommandations</span></div>
+          <div id="op-review-content"><p class="op-empty">Chargement des Business Reviews…</p></div>
         </section>
         <section class="op-card" id="op-roi">
           <div class="op-title"><h2>ROI client</h2><span>Gains mesurés & hypothèses</span></div>
@@ -160,11 +165,13 @@ function renderShell(data:PortalData){
   root.querySelector('#op-crm-link')?.addEventListener('click',()=>document.querySelector('#op-crm')?.scrollIntoView({behavior:'smooth'}));
   root.querySelector('#op-leads-link')?.addEventListener('click',()=>document.querySelector('#op-leads')?.scrollIntoView({behavior:'smooth'}));
   root.querySelector('#op-convs-link')?.addEventListener('click',()=>document.querySelector('#op-convs')?.scrollIntoView({behavior:'smooth'}));
+  root.querySelector('#op-review-link')?.addEventListener('click',()=>document.querySelector('#op-review')?.scrollIntoView({behavior:'smooth'}));
   root.querySelector('#op-roi-link')?.addEventListener('click',()=>document.querySelector('#op-roi')?.scrollIntoView({behavior:'smooth'}));
   root.querySelector('#op-reporting-link')?.addEventListener('click',()=>document.querySelector('#op-reporting')?.scrollIntoView({behavior:'smooth'}));
   root.querySelector('#op-usage-link')?.addEventListener('click',()=>document.querySelector('#op-usage')?.scrollIntoView({behavior:'smooth'}));
   root.querySelectorAll('.op-conv').forEach(btn=>btn.addEventListener('click',()=>void openConversation((btn as HTMLElement).dataset.id!)));
   void loadToday();
+  void loadBusinessReviews();
   void loadRoi();
   void loadReporting();
   void loadFollowups();
@@ -177,6 +184,70 @@ function renderShell(data:PortalData){
 
 
 
+
+
+async function loadBusinessReviews(){
+  if(!selectedOrg) return;
+  const box=root.querySelector('#op-review-content') as HTMLElement|null;
+  if(!box) return;
+  try{
+    const data=await api('/portal/business-reviews?organization_id='+encodeURIComponent(selectedOrg));
+    const reviews=data.reviews||[];
+    box.innerHTML=`
+      <div class="op-review-toolbar">
+        <input id="op-review-month" type="month" value="${new Date().toISOString().slice(0,7)}"/>
+        <button id="op-generate-review">Générer la revue</button>
+      </div>
+      <div class="op-review-list">
+        ${reviews.map((r:any)=>{
+          const f=r.metrics?.funnel||{},fin=r.metrics?.financial||{},roi=r.metrics?.roi||{};
+          return `
+          <article class="op-review-card">
+            <div class="op-review-head">
+              <div><b>${new Date(r.period_month).toLocaleDateString('fr-FR',{month:'long',year:'numeric'})}</b><span>${esc(r.status)}</span></div>
+              <small>${new Date(r.generated_at).toLocaleString('fr-FR')}</small>
+            </div>
+            <div class="op-review-kpis">
+              <span>Chats <b>${esc(f.conversations??0)}</b></span>
+              <span>Leads <b>${esc(f.leads??0)}</b></span>
+              <span>RDV <b>${esc(f.meetings??0)}</b></span>
+              <span>Prop. <b>${esc(f.proposals??0)}</b></span>
+              <span>Gagnés <b>${esc(f.won??0)}</b></span>
+              <span>Coût IA <b>${money(fin.ai_cost_usd,3)}</b></span>
+              <span>ROI <b>${roi.roi_pct==null?'—':money(roi.roi_pct,1)+' %'}</b></span>
+            </div>
+            <section><h3>Synthèse</h3><p>${esc(r.executive_summary||'Aucune synthèse.')}</p></section>
+            <div class="op-review-columns">
+              <section><h3>Points forts</h3><ul>${(r.highlights||[]).map((x:any)=>`<li>${esc(x)}</li>`).join('')||'<li>Aucun point fort renseigné.</li>'}</ul></section>
+              <section><h3>Risques</h3><ul>${(r.risks||[]).map((x:any)=>`<li>${esc(x)}</li>`).join('')||'<li>Aucun risque renseigné.</li>'}</ul></section>
+              <section><h3>Recommandations</h3><ul>${(r.recommendations||[]).map((x:any)=>`<li>${esc(x)}</li>`).join('')||'<li>Aucune recommandation.</li>'}</ul></section>
+            </div>
+            <div class="op-review-actions">
+              ${r.status==='draft'?'<button class="op-review-approve" data-id="'+esc(r.id)+'">Approuver</button>':''}
+            </div>
+          </article>`;
+        }).join('')||'<p class="op-empty">Aucune Business Review générée.</p>'}
+      </div>`;
+
+    box.querySelector('#op-generate-review')?.addEventListener('click',async()=>{
+      const month=(box.querySelector('#op-review-month') as HTMLInputElement).value;
+      await api('/portal/business-reviews/generate?organization_id='+encodeURIComponent(selectedOrg!),{
+        method:'POST',
+        body:JSON.stringify({period_month:month+'-01'})
+      });
+      await loadBusinessReviews();
+    });
+    box.querySelectorAll('.op-review-approve').forEach(btn=>btn.addEventListener('click',async()=>{
+      await api('/portal/business-reviews/approve?organization_id='+encodeURIComponent(selectedOrg!),{
+        method:'POST',
+        body:JSON.stringify({id:(btn as HTMLElement).dataset.id})
+      });
+      await loadBusinessReviews();
+    }));
+  }catch(e:any){
+    box.innerHTML='<p class="op-error">'+esc(e?.message||e)+'</p>';
+  }
+}
 
 async function loadRoi(){
   if(!selectedOrg) return;
