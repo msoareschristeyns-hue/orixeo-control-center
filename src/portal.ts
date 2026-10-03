@@ -82,6 +82,7 @@ function renderShell(data:PortalData){
           <a id="op-crm-link">CRM</a>
           <a id="op-leads-link">Leads</a>
           <a id="op-convs-link">Conversations</a>
+          <a id="op-access-link">Utilisateurs & accès</a>
           <a id="op-notifications-link">Notifications</a>
           <a id="op-workflow-link">Workflow Center</a>
           <a id="op-knowledge-link">Knowledge Center</a>
@@ -106,6 +107,10 @@ function renderShell(data:PortalData){
           <article><span>Appels IA ce mois</span><b>${esc(stats.ai_calls_month??0)}</b></article>
           <article><span>Coût IA</span><b>$${money(fin.ai_cost_usd,3)}</b></article>
           <article><span>Budget consommé</span><b>${fin.budget_consumption_pct==null?'—':money(fin.budget_consumption_pct,1)+' %'}</b></article>
+        </section>
+        <section class="op-card" id="op-access">
+          <div class="op-title"><h2>User & Access Center</h2><span>Utilisateurs, rôles & permissions</span></div>
+          <div id="op-access-content"><p class="op-empty">Chargement des accès…</p></div>
         </section>
         <section class="op-card" id="op-notifications">
           <div class="op-title"><h2>Notification Center</h2><span>Alertes & acquittements</span></div>
@@ -185,6 +190,7 @@ function renderShell(data:PortalData){
   root.querySelector('#op-crm-link')?.addEventListener('click',()=>document.querySelector('#op-crm')?.scrollIntoView({behavior:'smooth'}));
   root.querySelector('#op-leads-link')?.addEventListener('click',()=>document.querySelector('#op-leads')?.scrollIntoView({behavior:'smooth'}));
   root.querySelector('#op-convs-link')?.addEventListener('click',()=>document.querySelector('#op-convs')?.scrollIntoView({behavior:'smooth'}));
+  root.querySelector('#op-access-link')?.addEventListener('click',()=>document.querySelector('#op-access')?.scrollIntoView({behavior:'smooth'}));
   root.querySelector('#op-notifications-link')?.addEventListener('click',()=>document.querySelector('#op-notifications')?.scrollIntoView({behavior:'smooth'}));
   root.querySelector('#op-workflow-link')?.addEventListener('click',()=>document.querySelector('#op-workflow')?.scrollIntoView({behavior:'smooth'}));
   root.querySelector('#op-knowledge-link')?.addEventListener('click',()=>document.querySelector('#op-knowledge')?.scrollIntoView({behavior:'smooth'}));
@@ -195,6 +201,7 @@ function renderShell(data:PortalData){
   root.querySelector('#op-usage-link')?.addEventListener('click',()=>document.querySelector('#op-usage')?.scrollIntoView({behavior:'smooth'}));
   root.querySelectorAll('.op-conv').forEach(btn=>btn.addEventListener('click',()=>void openConversation((btn as HTMLElement).dataset.id!)));
   void loadToday();
+  void loadAccessCenter();
   void loadNotifications();
   void loadWorkflow();
   void loadKnowledge();
@@ -217,6 +224,97 @@ function renderShell(data:PortalData){
 
 
 
+
+
+async function loadAccessCenter(){
+  if(!selectedOrg) return;
+  const box=root.querySelector('#op-access-content') as HTMLElement|null;
+  if(!box) return;
+  try{
+    const data=await api('/portal/access?organization_id='+encodeURIComponent(selectedOrg));
+    const members=data.members||[], invites=data.invites||[], modules=(data.modules||[]).filter((m:any)=>m.enabled);
+    const canAdmin=['owner','admin'].includes(data.organization?.role);
+
+    box.innerHTML=`
+      <section class="op-report-card">
+        <h3>Membres</h3>
+        <div class="op-access-list">
+          ${members.map((m:any)=>`
+            <article class="op-access-member ${m.active?'':'disabled'}" data-user="${esc(m.user_id)}">
+              <div class="op-access-head">
+                <div><b>${esc(m.email||m.user_id)}</b><span>${esc(m.role)} · ${m.active?'actif':'désactivé'}</span></div>
+                <small>Dernière connexion : ${m.last_sign_in_at?new Date(m.last_sign_in_at).toLocaleString('fr-FR'):'—'}</small>
+              </div>
+              <div class="op-access-controls">
+                <label>Rôle
+                  <select class="op-access-role" ${canAdmin?'':'disabled'}>
+                    ${['owner','admin','builder','operator','viewer','member'].map(r=>`<option value="${r}" ${m.role===r?'selected':''}>${r}</option>`).join('')}
+                  </select>
+                </label>
+                <div class="op-access-modules">
+                  ${modules.map((mod:any)=>{
+                    const current=m.module_permissions?.[mod.module_key];
+                    return `<label><input type="checkbox" class="op-access-module" data-module="${esc(mod.module_key)}" ${current===false?'':'checked'} ${canAdmin?'':'disabled'}> ${esc(mod.module_key.replaceAll('_',' '))}</label>`;
+                  }).join('')}
+                </div>
+              </div>
+              <div class="op-access-actions">
+                <button class="op-access-save" ${canAdmin?'':'disabled'}>Enregistrer</button>
+                <button class="op-access-toggle" data-action="${m.active?'deactivate':'activate'}" ${canAdmin?'':'disabled'}>${m.active?'Désactiver':'Réactiver'}</button>
+              </div>
+              ${m.disabled_reason?'<p class="op-access-reason">'+esc(m.disabled_reason)+'</p>':''}
+            </article>`).join('')||'<p class="op-empty">Aucun membre.</p>'}
+        </div>
+      </section>
+
+      <section class="op-report-card">
+        <h3>Invitations</h3>
+        <div class="op-access-invites">
+          ${invites.map((i:any)=>`
+            <article>
+              <div><b>${esc(i.email)}</b><span>${esc(i.role)} · ${esc(i.status)}</span></div>
+              <small>Expire le ${new Date(i.expires_at).toLocaleString('fr-FR')}</small>
+              ${i.status==='pending'&&canAdmin?'<button class="op-invite-revoke" data-id="'+esc(i.id)+'">Révoquer</button>':''}
+            </article>`).join('')||'<p class="op-empty">Aucune invitation.</p>'}
+        </div>
+      </section>`;
+
+    box.querySelectorAll('.op-access-member').forEach(card=>{
+      card.querySelector('.op-access-save')?.addEventListener('click',async()=>{
+        const perms:any={};
+        card.querySelectorAll('.op-access-module').forEach((x:any)=>perms[x.dataset.module]=x.checked);
+        await api('/portal/access/update?organization_id='+encodeURIComponent(selectedOrg!),{
+          method:'POST',
+          body:JSON.stringify({
+            user_id:(card as HTMLElement).dataset.user,
+            action:'update',
+            role:(card.querySelector('.op-access-role') as HTMLSelectElement).value,
+            module_permissions:perms
+          })
+        });
+        await loadAccessCenter();
+      });
+      const toggle=card.querySelector('.op-access-toggle') as HTMLElement|null;
+      toggle?.addEventListener('click',async()=>{
+        await api('/portal/access/update?organization_id='+encodeURIComponent(selectedOrg!),{
+          method:'POST',
+          body:JSON.stringify({user_id:(card as HTMLElement).dataset.user,action:toggle.dataset.action})
+        });
+        await loadAccessCenter();
+      });
+    });
+
+    box.querySelectorAll('.op-invite-revoke').forEach(btn=>btn.addEventListener('click',async()=>{
+      await api('/portal/access/invite/revoke?organization_id='+encodeURIComponent(selectedOrg!),{
+        method:'POST',
+        body:JSON.stringify({invite_id:(btn as HTMLElement).dataset.id})
+      });
+      await loadAccessCenter();
+    }));
+  }catch(e:any){
+    box.innerHTML='<p class="op-error">'+esc(e?.message||e)+'</p>';
+  }
+}
 
 async function loadNotifications(){
   if(!selectedOrg) return;
