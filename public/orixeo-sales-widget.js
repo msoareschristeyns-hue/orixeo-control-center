@@ -1,5 +1,6 @@
 (() => {
   const apiUrl = window.ORIXEO_SALES_API_URL || "";
+  const widgetKey = window.ORIXEO_WIDGET_KEY || "";
   if (!apiUrl) {
     console.warn("Orixeo Sales AI: ORIXEO_SALES_API_URL is not configured.");
     return;
@@ -71,7 +72,11 @@
 
     const pending = addMessage("assistant pending", "Je regarde...");
     try {
-      const response = await fetch(`${apiUrl.replace(/\/$/, "")}/chat`, {
+      const base = apiUrl.replace(/\/$/, "");
+      const endpoint = widgetKey
+        ? `${base}/client/chat?widget_key=${encodeURIComponent(widgetKey)}`
+        : `${base}/chat`;
+      const response = await fetch(endpoint, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
