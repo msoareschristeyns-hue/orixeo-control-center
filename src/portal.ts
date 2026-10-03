@@ -77,7 +77,7 @@ function renderShell(data:PortalData){
         <img src="/orixeo-logo.svg" alt="Orixeo Lab"/>
         <div class="op-org"><b>${esc(org.name)}</b><span>${esc(org.role)}</span></div>
         <nav>
-          <a class="active">Vue d'ensemble</a>
+          <a class="active" id="op-today-link">Aujourd'hui</a>
           <a id="op-followups-link">Relances</a>
           <a id="op-crm-link">CRM</a>
           <a id="op-leads-link">Leads</a>
@@ -88,6 +88,10 @@ function renderShell(data:PortalData){
       </aside>
       <main class="op-main">
         <header><div><small>ORIXEO SALES AI</small><h1>Espace client</h1><p>Suivi de votre activité commerciale assistée par IA</p></div></header>
+        <section class="op-card" id="op-today">
+          <div class="op-title"><h2>Aujourd'hui</h2><span>Ordre recommandé</span></div>
+          <div id="op-today-content"><p class="op-empty">Chargement des priorités…</p></div>
+        </section>
         <section class="op-kpis">
           <article><span>Conversations</span><b>${esc(stats.conversations??0)}</b></article>
           <article><span>Leads</span><b>${esc(stats.leads??0)}</b></article>
@@ -141,12 +145,14 @@ function renderShell(data:PortalData){
     </div>`;
 
   root.querySelector('#op-logout')?.addEventListener('click',()=>supabase.auth.signOut());
+  root.querySelector('#op-today-link')?.addEventListener('click',()=>document.querySelector('#op-today')?.scrollIntoView({behavior:'smooth'}));
   root.querySelector('#op-followups-link')?.addEventListener('click',()=>document.querySelector('#op-followups')?.scrollIntoView({behavior:'smooth'}));
   root.querySelector('#op-crm-link')?.addEventListener('click',()=>document.querySelector('#op-crm')?.scrollIntoView({behavior:'smooth'}));
   root.querySelector('#op-leads-link')?.addEventListener('click',()=>document.querySelector('#op-leads')?.scrollIntoView({behavior:'smooth'}));
   root.querySelector('#op-convs-link')?.addEventListener('click',()=>document.querySelector('#op-convs')?.scrollIntoView({behavior:'smooth'}));
   root.querySelector('#op-usage-link')?.addEventListener('click',()=>document.querySelector('#op-usage')?.scrollIntoView({behavior:'smooth'}));
   root.querySelectorAll('.op-conv').forEach(btn=>btn.addEventListener('click',()=>void openConversation((btn as HTMLElement).dataset.id!)));
+  void loadToday();
   void loadFollowups();
   void loadCrmBoard();
   root.querySelector('#op-modal-close')?.addEventListener('click',()=>root.querySelector('#op-modal')?.classList.remove('open'));
@@ -154,6 +160,45 @@ function renderShell(data:PortalData){
 }
 
 
+
+
+async function loadToday(){
+  if(!selectedOrg) return;
+  const box=root.querySelector('#op-today-content') as HTMLElement|null;
+  if(!box) return;
+  try{
+    const data=await api('/portal/today?organization_id='+encodeURIComponent(selectedOrg));
+    const s=data.summary||{},items=data.items||[];
+    box.innerHTML=`
+      <div class="op-today-kpis">
+        <div><span>À traiter</span><b>${esc(s.total??0)}</b></div>
+        <div><span>Urgent</span><b>${esc(s.urgent??0)}</b></div>
+        <div><span>Relances</span><b>${esc(s.followups??0)}</b></div>
+        <div><span>Tâches</span><b>${esc(s.overdue_tasks??0)}</b></div>
+        <div><span>RDV</span><b>${esc(s.appointments??0)}</b></div>
+        <div><span>Nouveaux leads</span><b>${esc(s.new_leads??0)}</b></div>
+        <div><span>Propositions</span><b>${esc(s.proposals??0)}</b></div>
+      </div>
+      <div class="op-today-list">
+        ${items.map((x:any,i:number)=>`
+          <article class="op-today-item">
+            <div class="op-rank">${i+1}</div>
+            <div class="op-today-score">${esc(x.score)}</div>
+            <div class="op-today-main">
+              <b>${esc(x.title)}</b>
+              <span>${esc(x.contact||'—')}${x.company?' · '+esc(x.company):''}</span>
+              <small>${esc(x.type)} · ${esc(x.reason)}${x.due_at?' · '+new Date(x.due_at).toLocaleString('fr-FR'):''}</small>
+            </div>
+            <div class="op-today-actions">
+              ${x.lead_id?`<button class="op-today-open" data-lead="${esc(x.lead_id)}">Ouvrir</button>`:''}
+            </div>
+          </article>`).join('')||'<p class="op-empty">Rien de prioritaire aujourd’hui.</p>'}
+      </div>`;
+    box.querySelectorAll('.op-today-open').forEach(btn=>btn.addEventListener('click',()=>void openLead((btn as HTMLElement).dataset.lead!)));
+  }catch(e:any){
+    box.innerHTML='<p class="op-error">'+esc(e?.message||e)+'</p>';
+  }
+}
 
 async function loadFollowups(){
   if(!selectedOrg) return;
