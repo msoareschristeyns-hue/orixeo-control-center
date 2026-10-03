@@ -82,6 +82,7 @@ function renderShell(data:PortalData){
           <a id="op-crm-link">CRM</a>
           <a id="op-leads-link">Leads</a>
           <a id="op-convs-link">Conversations</a>
+          <a id="op-roi-link">ROI</a>
           <a id="op-reporting-link">Reporting</a>
           <a id="op-usage-link">Usage IA</a>
         </nav>
@@ -100,6 +101,10 @@ function renderShell(data:PortalData){
           <article><span>Appels IA ce mois</span><b>${esc(stats.ai_calls_month??0)}</b></article>
           <article><span>Coût IA</span><b>$${money(fin.ai_cost_usd,3)}</b></article>
           <article><span>Budget consommé</span><b>${fin.budget_consumption_pct==null?'—':money(fin.budget_consumption_pct,1)+' %'}</b></article>
+        </section>
+        <section class="op-card" id="op-roi">
+          <div class="op-title"><h2>ROI client</h2><span>Gains mesurés & hypothèses</span></div>
+          <div id="op-roi-content"><p class="op-empty">Chargement du ROI…</p></div>
         </section>
         <section class="op-card" id="op-reporting">
           <div class="op-title"><h2>Reporting commercial</h2><span>Conversion & performance</span></div>
@@ -155,10 +160,12 @@ function renderShell(data:PortalData){
   root.querySelector('#op-crm-link')?.addEventListener('click',()=>document.querySelector('#op-crm')?.scrollIntoView({behavior:'smooth'}));
   root.querySelector('#op-leads-link')?.addEventListener('click',()=>document.querySelector('#op-leads')?.scrollIntoView({behavior:'smooth'}));
   root.querySelector('#op-convs-link')?.addEventListener('click',()=>document.querySelector('#op-convs')?.scrollIntoView({behavior:'smooth'}));
+  root.querySelector('#op-roi-link')?.addEventListener('click',()=>document.querySelector('#op-roi')?.scrollIntoView({behavior:'smooth'}));
   root.querySelector('#op-reporting-link')?.addEventListener('click',()=>document.querySelector('#op-reporting')?.scrollIntoView({behavior:'smooth'}));
   root.querySelector('#op-usage-link')?.addEventListener('click',()=>document.querySelector('#op-usage')?.scrollIntoView({behavior:'smooth'}));
   root.querySelectorAll('.op-conv').forEach(btn=>btn.addEventListener('click',()=>void openConversation((btn as HTMLElement).dataset.id!)));
   void loadToday();
+  void loadRoi();
   void loadReporting();
   void loadFollowups();
   void loadCrmBoard();
@@ -169,6 +176,88 @@ function renderShell(data:PortalData){
 
 
 
+
+
+async function loadRoi(){
+  if(!selectedOrg) return;
+  const box=root.querySelector('#op-roi-content') as HTMLElement|null;
+  if(!box) return;
+  try{
+    const data=await api('/portal/roi?organization_id='+encodeURIComponent(selectedOrg));
+    const s=data.summary||{},cases=data.use_cases||[],calc=data.calculations||[];
+    const calcById=new Map(calc.map((x:any)=>[x.use_case_id,x]));
+    box.innerHTML=`
+      <div class="op-roi-kpis">
+        <div><span>Heures gagnées</span><b>${s.hours_saved==null?'—':money(s.hours_saved,1)+' h'}</b></div>
+        <div><span>Valeur temps</span><b>${s.time_value_eur==null?'—':money(s.time_value_eur,0)+' €'}</b></div>
+        <div><span>Revenus additionnels</span><b>${s.additional_revenue_eur==null?'—':money(s.additional_revenue_eur,0)+' €'}</b></div>
+        <div><span>Coûts évités</span><b>${s.avoided_cost_eur==null?'—':money(s.avoided_cost_eur,0)+' €'}</b></div>
+        <div><span>Coût total</span><b>${s.total_cost_eur==null?'—':money(s.total_cost_eur,0)+' €'}</b></div>
+        <div><span>Valeur nette</span><b>${s.net_value_eur==null?'—':money(s.net_value_eur,0)+' €'}</b></div>
+        <div><span>ROI</span><b>${s.roi_pct==null?'—':money(s.roi_pct,1)+' %'}</b></div>
+      </div>
+      <div class="op-roi-grid">
+        <section class="op-report-card">
+          <h3>Ajouter un cas d’usage</h3>
+          <form id="op-roi-form" class="op-roi-form">
+            <input name="name" placeholder="Nom du cas d’usage" required/>
+            <input name="category" placeholder="Catégorie" value="automation"/>
+            <textarea name="description" placeholder="Description"></textarea>
+            <div class="op-roi-fields">
+              <label>Avant (min)<input name="baseline" type="number" min="0" step="0.1"/></label>
+              <label>Après (min)<input name="current" type="number" min="0" step="0.1"/></label>
+              <label>Occurrences/mois<input name="occurrences" type="number" min="0" step="0.1"/></label>
+              <label>Coût horaire €<input name="hourly" type="number" min="0" step="0.1"/></label>
+              <label>Revenus + €<input name="revenue" type="number" min="0" step="0.1" value="0"/></label>
+              <label>Coûts évités €<input name="avoided" type="number" min="0" step="0.1" value="0"/></label>
+              <label>Confiance %<input name="confidence" type="number" min="0" max="100" step="1" value="100"/></label>
+            </div>
+            <button type="submit">Ajouter le cas d’usage</button>
+          </form>
+        </section>
+        <section class="op-report-card">
+          <h3>Cas d’usage suivis</h3>
+          <div class="op-roi-list">
+            ${cases.map((u:any)=>{const r:any=calcById.get(u.id)||{};return `
+              <article>
+                <div><b>${esc(u.name)}</b><span>${esc(u.category)}</span></div>
+                <p>${esc(u.description||'')}</p>
+                <div class="op-roi-case-kpis">
+                  <span>${r.hours_saved==null?'—':money(r.hours_saved,1)+' h gagnées'}</span>
+                  <span>${r.confidence_adjusted_value_eur==null?'—':money(r.confidence_adjusted_value_eur,0)+' € valeur'}</span>
+                  <span>${esc(u.confidence_pct)} % confiance</span>
+                </div>
+              </article>`}).join('')||'<p class="op-empty">Aucun cas d’usage suivi.</p>'}
+          </div>
+        </section>
+      </div>`;
+    const form=box.querySelector('#op-roi-form') as HTMLFormElement|null;
+    form?.addEventListener('submit',async e=>{
+      e.preventDefault();
+      const fd=new FormData(form);
+      await api('/portal/roi?organization_id='+encodeURIComponent(selectedOrg!),{
+        method:'POST',
+        body:JSON.stringify({
+          name:String(fd.get('name')||''),
+          category:String(fd.get('category')||'other'),
+          description:String(fd.get('description')||''),
+          baseline_minutes_per_occurrence:Number(fd.get('baseline')||0),
+          current_minutes_per_occurrence:Number(fd.get('current')||0),
+          occurrences_per_month:Number(fd.get('occurrences')||0),
+          hourly_cost_eur:Number(fd.get('hourly')||0),
+          additional_revenue_eur:Number(fd.get('revenue')||0),
+          avoided_cost_eur:Number(fd.get('avoided')||0),
+          confidence_pct:Number(fd.get('confidence')||100),
+          source:'customer_portal'
+        })
+      });
+      form.reset();
+      await loadRoi();
+    });
+  }catch(e:any){
+    box.innerHTML='<p class="op-error">'+esc(e?.message||e)+'</p>';
+  }
+}
 
 async function loadReporting(){
   if(!selectedOrg) return;
