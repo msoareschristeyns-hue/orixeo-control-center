@@ -31,6 +31,7 @@ function render(data:any){
     <div class="oc-list">
       ${clients.map((c:any)=>{
         const clientSteps=steps.filter((s:any)=>s.organization_id===c.organization_id);
+        const adminPending=clientSteps.some((s:any)=>s.step_key==='admin_user_ready'&&s.status!=='done');
         return `
           <article class="oc-client oc-${esc(c.status)}" data-org="${esc(c.organization_id)}">
             <div class="oc-client-head">
@@ -55,6 +56,7 @@ function render(data:any){
               <input class="oc-target" type="date" value="${c.target_go_live_at?String(c.target_go_live_at).slice(0,10):''}">
               <button class="oc-save-date">Date cible</button>
               <button class="oc-refresh">Rafraîchir</button>
+              ${adminPending?'<button class="oc-bootstrap-owner">Activer mon accès administrateur</button>':''}
               ${c.status==='blocked'
                 ?'<button class="oc-resume">Reprendre</button>'
                 :'<button class="oc-block">Bloquer</button>'}
@@ -87,6 +89,10 @@ async function openOnboarding(){
       const org=(card as HTMLElement).dataset.org!;
       card.querySelector('.oc-refresh')?.addEventListener('click',async()=>{
         await call('/onboarding/action',{method:'POST',body:JSON.stringify({organization_id:org,action:'refresh'})});
+        await openOnboarding();
+      });
+      card.querySelector('.oc-bootstrap-owner')?.addEventListener('click',async()=>{
+        await call('/onboarding/bootstrap-owner',{method:'POST',body:JSON.stringify({organization_id:org})});
         await openOnboarding();
       });
       card.querySelector('.oc-save-date')?.addEventListener('click',async()=>{
